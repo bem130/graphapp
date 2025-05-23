@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 rquickjs = "0.9"
+eframe = "0.31.1"
+egui_plot = "0.32.1"
