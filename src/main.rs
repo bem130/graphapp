@@ -43,22 +43,52 @@ impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut js_error: Option<String> = None;
-
-            // --- スライダUI ---
             let mut need_redraw = false;
-            ui.heading("パラメータ");
-            if !self.sliders.is_empty() {
-                for slider in &mut self.sliders {
-                    if ui.add(egui::Slider::new(&mut slider.value, slider.min..=slider.max)
-                        .text(&slider.name)
-                        .step_by(slider.step)).changed() 
-                    {
-                        need_redraw = true;
-                    }
+
+            // グラフエリアのサイズを画面全体に設定
+            let available_size = ui.available_size();
+
+            // --- プロット領域の作成（背景として配置）---
+            let plot = Plot::new("parametric_plot")
+                .show_background(true)
+                .show_axes([true, true])
+                .min_size(available_size)
+                .width(available_size.x)
+                .height(available_size.y)
+                .data_aspect(1.0)
+                .x_axis_label("x")
+                .y_axis_label("y");
+
+            // プロット描画
+            plot.show(ui, |plot_ui| {
+                for (name, points) in self.graph_lines.borrow().iter() {
+                    let line = Line::new(name, PlotPoints::new(points.clone()))
+                        .color(egui::Color32::from_rgb(200, 100, 0))
+                        .name(name);
+                    plot_ui.line(line);
                 }
-                ui.separator();
+            });
+
+            // --- スライダーを重ねて表示 ---
+            if !self.sliders.is_empty() {
+                // 左上にスライダーパネルを配置
+                egui::Window::new("パラメータ")
+                    .fixed_pos(egui::pos2(10.0, 10.0))
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        ui.set_min_width(100.0);
+                        for slider in &mut self.sliders {
+                            if ui.add(egui::Slider::new(&mut slider.value, slider.min..=slider.max)
+                                .text(&slider.name)
+                                .step_by(slider.step)).changed() 
+                            {
+                                need_redraw = true;
+                            }
+                        }
+                    });
             }
 
+            // --- JavaScript関連の処理 ---
             self.js_context.with(|js_ctx| {
                 // 最初の実行時にのみJavaScript関数を定義
                 if !self.js_code_evaluated {
@@ -173,32 +203,15 @@ impl App for ParametricPlotApp {
                 }
             });
 
-            // --- グラフ描画 or エラー表示 ---
+            // エラー表示（もしあれば）
             if let Some(err) = js_error {
+                egui::Window::new("エラー")
+                    .fixed_pos(egui::pos2(10.0, ui.available_rect_before_wrap().bottom() - 40.0))
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        ui.colored_label(egui::Color32::RED, format!("JSエラー: {}", err));
+                    });
                 println!("JSエラー: {}", err);
-                ui.colored_label(egui::Color32::RED, format!("JSエラー: {}", err));
-            } else {
-                let window_height = ctx.input(|input| input.screen_rect().height()) * 0.8;
-                let window_width = ctx.input(|input| input.screen_rect().width());
-                let plot_size = egui::vec2(window_width, window_height);
-                let plot = Plot::new("parametric_plot")
-                    .show_background(true)
-                    .show_axes([true, true])
-                    .min_size(plot_size)
-                    .width(plot_size.x)
-                    .height(plot_size.y)
-                    .data_aspect(1.0)
-                    .x_axis_label("x")
-                    .y_axis_label("y");
-
-                plot.show(ui, |plot_ui| {
-                    for (name, points) in self.graph_lines.borrow().iter() {
-                        let line = Line::new(name, PlotPoints::new(points.clone()))
-                            .color(egui::Color32::from_rgb(200, 100, 0))
-                            .name(name);
-                        plot_ui.line(line);
-                    }
-                });
             }
         });
     }
