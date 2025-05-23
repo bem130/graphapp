@@ -4,63 +4,87 @@ use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
 use rquickjs::function::Func;
 
 // アプリケーションの状態を保持する構造体
-struct ParametricPlotApp {
-    a: f64, // x座標の振幅
-    b: f64, // y座標の振幅
-    t_min: f64, // パラメータtの最小値
-    t_max: f64, // パラメータtの最大値
-    num_points: usize, // プロットする点の数
-}
+struct ParametricPlotApp;
 
 impl Default for ParametricPlotApp {
     fn default() -> Self {
-        Self {
-            a: 1.0,
-            b: 1.0,
-            t_min: 0.0,
-            t_max: 2.0 * std::f64::consts::PI, // 0から2πまで
-            num_points: 50, // デフォルトで500点
-        }
+        Self
     }
 }
 
 impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            // --- JavaScriptで点列を生成 ---
+            // --- Rust→JS API: addParametricGraph ---
             let rt = Runtime::new().unwrap();
             let js_ctx = JsContext::full(&rt).unwrap();
-            let mut points: Vec<[f64; 2]> = Vec::new();
+            let mut graph_lines: Vec<(String, Vec<[f64; 2]> )> = Vec::new();
             js_ctx.with(|js_ctx| {
-                // RustのパラメータをJSに渡す
-                js_ctx.globals().set("a", self.a).unwrap();
-                js_ctx.globals().set("b", self.b).unwrap();
-                js_ctx.globals().set("t_min", self.t_min).unwrap();
-                js_ctx.globals().set("t_max", self.t_max).unwrap();
-                js_ctx.globals().set("num_points", self.num_points as i32).unwrap();
-                // JSで点列を生成
-                let js_code = r#"
-                    let points = [];
-                    let t_range = t_max - t_min;
-                    for (let i = 0; i < num_points; ++i) {
-                        let t = t_min + (i / (num_points - 1)) * t_range;
-                        let x = a * Math.cos(t);
-                        let y = b * Math.sin(t);
-                        points.push([x, y]);
+                use std::rc::Rc;
+                use std::cell::RefCell;
+                let graph_lines_rc = Rc::new(RefCell::new(Vec::new()));
+                let graph_lines_api = graph_lines_rc.clone();
+                let add_parametric_graph = Func::from(move |f: rquickjs::Function, range: rquickjs::Object, name: String| {
+                    let min: f64 = range.get("min").unwrap_or(0.0);
+                    let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
+                    let delta: Option<f64> = range.get("delta").ok();
+                    let mut points = Vec::new();
+                    if let Some(delta) = delta {
+                        let mut t = min;
+                        while t <= max {
+                            let xy: Vec<f64> = f.call((t,)).unwrap();
+                            if xy.len() == 2 {
+                                points.push([xy[0], xy[1]]);
+                            }
+                            t += delta;
+                        }
+                    } else {
+                        let num_points: usize = range.get("num_points").unwrap_or(500);
+                        for i in 0..num_points {
+                            let t = min + (i as f64 / (num_points - 1) as f64) * (max - min);
+                            let xy: Vec<f64> = f.call((t,)).unwrap();
+                            if xy.len() == 2 {
+                                points.push([xy[0], xy[1]]);
+                            }
+                        }
                     }
-                    points;
+                    graph_lines_api.borrow_mut().push((name.clone(), points));
+                });
+                js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
+                // サンプル: JSでパラメータも指定
+                let js_code = r#"
+                    let a = 1.0;
+                    let b = 1.0;
+                    // 円
+                    addParametricGraph(
+                        function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
+                        { min: 0, max: 2 * Math.PI, num_points: 1000 },
+                        "媒介変数曲線"
+                    );
+                    // 薔薇曲線（ローズカーブ）: r = cos(kθ)
+                    let k = 9;
+                    let r = 1.0;
+                    addParametricGraph(
+                        function(t) {
+                            let radius = r * Math.cos(k * t);
+                            return [radius * Math.cos(t), radius * Math.sin(t)];
+                        },
+                        { min: 0, max: 2 * Math.PI, num_points: 1000 },
+                        `薔薇曲線 k=${k}`
+                    );
                 "#;
-                let js_points: Vec<Vec<f64>> = js_ctx.eval(js_code).unwrap();
-                points = js_points.into_iter().map(|xy| [xy[0], xy[1]]).collect();
+                js_ctx.eval::<(), _>(js_code).unwrap();
+                let graph_lines_final = match Rc::try_unwrap(graph_lines_rc) {
+                    Ok(rc) => rc.into_inner(),
+                    Err(rc) => rc.borrow().clone(),
+                };
+                graph_lines = graph_lines_final;
             });
-            // ウインドウサイズを取得
+            // --- グラフ描画 ---
             let window_height = ctx.input(|input| input.screen_rect().height());
             let window_width = ctx.input(|input| input.screen_rect().width());
             let plot_size = egui::vec2(window_width, window_height);
-            let line = Line::new("媒介変数曲線", PlotPoints::new(points))
-                .color(egui::Color32::from_rgb(200, 100, 0))
-                .name("媒介変数曲線");
-            Plot::new("parametric_plot")
+            let plot = Plot::new("parametric_plot")
                 .show_background(true)
                 .show_axes([true, true])
                 .min_size(plot_size)
@@ -68,8 +92,15 @@ impl App for ParametricPlotApp {
                 .height(plot_size.y)
                 .data_aspect(1.0)
                 .x_axis_label("x")
-                .y_axis_label("y")
-                .show(ui, |plot_ui| plot_ui.line(line));
+                .y_axis_label("y");
+            plot.show(ui, |plot_ui| {
+                for (name, points) in &graph_lines {
+                    let line = Line::new(name.as_str(), PlotPoints::new(points.clone()))
+                        .color(egui::Color32::from_rgb(200, 100, 0))
+                        .name(name);
+                    plot_ui.line(line);
+                }
+            });
         });
     }
 }
