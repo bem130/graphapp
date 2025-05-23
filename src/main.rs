@@ -174,7 +174,7 @@ impl App for ParametricPlotApp {
                             addSlider("b", 0.1, 2.0, 0.1, 1.0);  // 円の縦サイズ
                             addSlider("k", 1, 20, 1, 9);         // 薔薇曲線のローブ数
                             addSlider("r", 0.1, 2.0, 0.1, 1.0);  // 薔薇曲線の大きさ
-                            addSlider("n", 1, 20, 1, 8);         // ベクトルの数
+                            addSlider("n", 0, 5, 0.01, 1);         // ベクトルの位置
                         }
                         function draw() {
                             // 円 (a,bで縦横比を制御)
@@ -194,23 +194,21 @@ impl App for ParametricPlotApp {
                             );
 
                             // 円周上に接線ベクトルを描画
-                            for (let i = 0; i < n; i++) {
-                                let t = (i / n) * 2 * Math.PI;
-                                // 円周上の点を返す関数
-                                let start = function(t) { 
-                                    return [a * Math.cos(t), b * Math.sin(t)]; 
-                                };
-                                // 接線ベクトルを返す関数 (速度ベクトル)
-                                let tangent = function(t) { 
-                                    return [-a * Math.sin(t), b * Math.cos(t)]; 
-                                };
-                                addVector(
-                                    `接線${i+1}`,
-                                    start,
-                                    tangent,
-                                    t
-                                );
-                            }
+                            let t = (n) * 2 * Math.PI;
+                            // 円周上の点を返す関数
+                            let start = function(t) { 
+                                return [a * Math.cos(t), b * Math.sin(t)]; 
+                            };
+                            // 接線ベクトルを返す関数 (速度ベクトル)
+                            let tangent = function(t) { 
+                                return [-a * Math.sin(t), b * Math.cos(t)]; 
+                            };
+                            addVector(
+                                `接線${n}`,
+                                start,
+                                tangent,
+                                t
+                            );
                         }
                     "#;
 
