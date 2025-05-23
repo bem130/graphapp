@@ -1,5 +1,6 @@
 use eframe::{egui, App, Frame};
-use egui_plot::{Line, Plot, PlotPoints};
+use egui_plot::{Line, Plot, PlotPoints, Arrows};
+use egui::Color32;
 use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
 use rquickjs::function::Func;
 
@@ -21,7 +22,8 @@ struct ParametricPlotApp {
     sliders: Vec<SliderParam>,
     js_context: JsContext,
     js_code_evaluated: bool,
-    graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>)>>>, // グラフデータを保持
+    graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>)>>>,
+    vectors: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Vec<[f64; 2]>)>>>,  // ベクトルデータを保持 (名前、始点の配列、終点の配列)
 }
 
 impl Default for ParametricPlotApp {
@@ -33,6 +35,7 @@ impl Default for ParametricPlotApp {
             js_context,
             js_code_evaluated: false,
             graph_lines: Rc::new(RefCell::new(Vec::new())),
+            vectors: Rc::new(RefCell::new(Vec::new())),  // ベクトルの初期化
         }
     }
 }
@@ -61,11 +64,19 @@ impl App for ParametricPlotApp {
 
             // プロット描画
             plot.show(ui, |plot_ui| {
-                for (name, points) in self.graph_lines.borrow().iter() {
-                    let line = Line::new(name, PlotPoints::new(points.clone()))
-                        .color(egui::Color32::from_rgb(200, 100, 0))
-                        .name(name);
+                // 通常の曲線を描画
+                for (name, points) in self.graph_lines.borrow().iter() {                    let line = Line::new(name, PlotPoints::new(points.clone()))
+                        .color(Color32::from_rgb(200, 100, 0));
                     plot_ui.line(line);
+                }
+                
+                // ベクトルを描画
+                for (name, origins, tips) in self.vectors.borrow().iter() {                    let arrows = Arrows::new(
+                        name,                              // 名前
+                        PlotPoints::new(origins.clone()),  // 始点の配列
+                        PlotPoints::new(tips.clone())      // 終点の配列
+                    ).color(Color32::from_rgb(0, 150, 200));
+                    plot_ui.arrows(arrows);
                 }
             });
 
@@ -95,6 +106,7 @@ impl App for ParametricPlotApp {
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
+                    let vectors_api = self.vectors.clone();  // ベクトルAPIのためのクローン
 
                     // addSlider API
                     let add_slider = Func::from(move |name: String, min: f64, max: f64, step: f64, default: f64| {
@@ -134,6 +146,25 @@ impl App for ParametricPlotApp {
                     });
                     js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
 
+                    // addVector API - パラメトリック関数からベクトルを描画
+                    let vectors_api = self.vectors.clone();  // 新しいクローン
+                    let add_vector = Func::from(move |name: String, start_f: rquickjs::Function, vec_f: rquickjs::Function, t: f64| -> JsResult<()> {
+                        // 始点を計算
+                        let start: Vec<f64> = start_f.call((t,))?;
+                        // ベクトルを計算
+                        let vec: Vec<f64> = vec_f.call((t,))?;
+                        
+                        if start.len() == 2 && vec.len() == 2 {
+                            vectors_api.borrow_mut().push((
+                                name.clone(),
+                                vec![[start[0], start[1]]],              // 始点
+                                vec![[start[0] + vec[0], start[1] + vec[1]]]  // 終点 = 始点 + ベクトル
+                            ));
+                        }
+                        Ok(())
+                    });
+                    js_ctx.globals().set("addVector", add_vector).unwrap();
+
                     // JSコードの評価
                     let js_code = r#"
                         // 円と薔薇曲線を描画する関数を定義
@@ -143,6 +174,7 @@ impl App for ParametricPlotApp {
                             addSlider("b", 0.1, 2.0, 0.1, 1.0);  // 円の縦サイズ
                             addSlider("k", 1, 20, 1, 9);         // 薔薇曲線のローブ数
                             addSlider("r", 0.1, 2.0, 0.1, 1.0);  // 薔薇曲線の大きさ
+                            addSlider("n", 1, 20, 1, 8);         // ベクトルの数
                         }
                         function draw() {
                             // 円 (a,bで縦横比を制御)
@@ -160,6 +192,25 @@ impl App for ParametricPlotApp {
                                 { min: 0, max: 2 * Math.PI, num_points: 1000 },
                                 `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`
                             );
+
+                            // 円周上に接線ベクトルを描画
+                            for (let i = 0; i < n; i++) {
+                                let t = (i / n) * 2 * Math.PI;
+                                // 円周上の点を返す関数
+                                let start = function(t) { 
+                                    return [a * Math.cos(t), b * Math.sin(t)]; 
+                                };
+                                // 接線ベクトルを返す関数 (速度ベクトル)
+                                let tangent = function(t) { 
+                                    return [-a * Math.sin(t), b * Math.cos(t)]; 
+                                };
+                                addVector(
+                                    `接線${i+1}`,
+                                    start,
+                                    tangent,
+                                    t
+                                );
+                            }
                         }
                     "#;
 
@@ -194,6 +245,7 @@ impl App for ParametricPlotApp {
 
                     // グラフデータをクリア
                     self.graph_lines.borrow_mut().clear();
+                    self.vectors.borrow_mut().clear();  // ベクトルデータのクリア
 
                     // draw関数実行
                     if let Err(e) = js_ctx.eval::<(), _>("draw();") {
