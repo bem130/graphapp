@@ -3,153 +3,182 @@ use egui_plot::{Line, Plot, PlotPoints};
 use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
 use rquickjs::function::Func;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+// スライダ情報を保持する構造体
+#[derive(Clone)]
+struct SliderParam {
+    name: String,
+    min: f64,
+    max: f64,
+    step: f64,
+    value: f64,
+}
+
 // アプリケーションの状態を保持する構造体
-struct ParametricPlotApp;
+struct ParametricPlotApp {
+    sliders: Vec<SliderParam>,
+    js_context: JsContext,
+    js_code_evaluated: bool,
+    graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>)>>>, // グラフデータを保持
+}
 
 impl Default for ParametricPlotApp {
     fn default() -> Self {
-        Self
+        let runtime = Runtime::new().unwrap();
+        let js_context = JsContext::full(&runtime).unwrap();
+        Self {
+            sliders: Vec::new(),
+            js_context,
+            js_code_evaluated: false,
+            graph_lines: Rc::new(RefCell::new(Vec::new())),
+        }
     }
 }
 
-impl ParametricPlotApp {
-    // js_codeのハッシュ値を取得
-    fn get_js_code_hash() -> Option<u64> {
-        use std::cell::RefCell;
-        thread_local! {
-            static LAST_HASH: RefCell<Option<u64>> = RefCell::new(None);
-        }
-        LAST_HASH.with(|h| *h.borrow())
-    }
-    // js_codeのハッシュ値をセット
-    fn set_js_code_hash(hash: u64) {
-        use std::cell::RefCell;
-        thread_local! {
-            static LAST_HASH: RefCell<Option<u64>> = RefCell::new(None);
-        }
-        LAST_HASH.with(|h| *h.borrow_mut() = Some(hash));
-    }
-}
+impl ParametricPlotApp {}
 
 impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
-        use std::cell::RefCell;
-        use std::rc::Rc;
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
         egui::CentralPanel::default().show(ctx, |ui| {
-            let rt = Runtime::new().unwrap();
-            let js_ctx = JsContext::full(&rt).unwrap();
-            let mut graph_lines: Vec<(String, Vec<[f64; 2]>)> = Vec::new();
             let mut js_error: Option<String> = None;
-            js_ctx.with(|js_ctx| {
-                let graph_lines_rc = Rc::new(RefCell::new(Vec::new()));
-                let graph_lines_api = graph_lines_rc.clone();
-                let add_parametric_graph = Func::from(move |f: rquickjs::Function, range: rquickjs::Object, name: String| {
-                    let min: f64 = range.get("min").unwrap_or(0.0);
-                    let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
-                    let delta: Option<f64> = range.get("delta").ok();
-                    let mut points = Vec::new();
-                    if let Some(delta) = delta {
-                        let mut t = min;
-                        while t <= max {
-                            let xy: Vec<f64> = f.call((t,)).unwrap();
-                            if xy.len() == 2 {
-                                points.push([xy[0], xy[1]]);
+
+            // --- スライダUI ---
+            let mut need_redraw = false;
+            ui.heading("パラメータ");
+            if !self.sliders.is_empty() {
+                for slider in &mut self.sliders {
+                    if ui.add(egui::Slider::new(&mut slider.value, slider.min..=slider.max)
+                        .text(&slider.name)
+                        .step_by(slider.step)).changed() 
+                    {
+                        need_redraw = true;
+                    }
+                }
+                ui.separator();
+            }
+
+            self.js_context.with(|js_ctx| {
+                // 最初の実行時にのみJavaScript関数を定義
+                if !self.js_code_evaluated {
+                    let sliders_rc = Rc::new(RefCell::new(Vec::new()));
+                    let sliders_api = sliders_rc.clone();
+                    let graph_lines_api = self.graph_lines.clone();
+
+                    // addSlider API
+                    let add_slider = Func::from(move |name: String, min: f64, max: f64, step: f64, default: f64| {
+                        sliders_api.borrow_mut().push(SliderParam {
+                            name: name.clone(), min, max, step, value: default
+                        });
+                    });
+                    js_ctx.globals().set("addSlider", add_slider).unwrap();
+
+                    // addParametricGraph API
+                    let add_parametric_graph = Func::from(move |f: rquickjs::Function, range: rquickjs::Object, name: String| -> JsResult<()> {
+                        let min: f64 = range.get("min").unwrap_or(0.0);
+                        let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
+                        let delta: Option<f64> = range.get("delta").ok();
+                        let mut points = Vec::new();
+                        if let Some(delta) = delta {
+                            let mut t = min;
+                            while t <= max {
+                                let xy: Vec<f64> = f.call((t,))?;
+                                if xy.len() == 2 {
+                                    points.push([xy[0], xy[1]]);
+                                }
+                                t += delta;
                             }
-                            t += delta;
+                        } else {
+                            let num_points: usize = range.get("num_points").unwrap_or(500);
+                            for i in 0..num_points {
+                                let t = min + (i as f64 / (num_points - 1) as f64) * (max - min);
+                                let xy: Vec<f64> = f.call((t,))?;
+                                if xy.len() == 2 {
+                                    points.push([xy[0], xy[1]]);
+                                }
+                            }
                         }
+                        graph_lines_api.borrow_mut().push((name, points));
+                        Ok(())
+                    });
+                    js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
+
+                    // JSコードの評価
+                    let js_code = r#"
+                        // 円と薔薇曲線を描画する関数を定義
+                        function setup() {
+                            // パラメータをスライダーで定義
+                            addSlider("a", 0.1, 2.0, 0.1, 1.0);  // 円の横サイズ
+                            addSlider("b", 0.1, 2.0, 0.1, 1.0);  // 円の縦サイズ
+                            addSlider("k", 1, 20, 1, 9);         // 薔薇曲線のローブ数
+                            addSlider("r", 0.1, 2.0, 0.1, 1.0);  // 薔薇曲線の大きさ
+                        }
+                        function draw() {
+                            // 円 (a,bで縦横比を制御)
+                            addParametricGraph(
+                                function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
+                                { min: 0, max: 2 * Math.PI, num_points: 1000 },
+                                `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`
+                            );
+                            // 薔薇曲線 (k=ローブ数, r=サイズ)
+                            addParametricGraph(
+                                function(t) {
+                                    let radius = r * Math.cos(k * t);
+                                    return [radius * Math.cos(t), radius * Math.sin(t)];
+                                },
+                                { min: 0, max: 2 * Math.PI, num_points: 1000 },
+                                `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`
+                            );
+                        }
+                    "#;
+
+                    if let Err(e) = js_ctx.eval::<(), _>(js_code) {
+                        js_error = Some(format!("JavaScript parse error: {e:?}"));
+                        return;
+                    }
+
+                    // スライダーの初期化
+                    let setup_exists = js_ctx.eval::<bool, _>("typeof setup === 'function'").unwrap_or(false);
+                    if setup_exists {
+                        if let Err(e) = js_ctx.eval::<(), _>("setup();") {
+                            js_error = Some(format!("setup() error: {e:?}"));
+                            return;
+                        }
+                        self.sliders = sliders_rc.borrow().clone();
+                        need_redraw = true;
                     } else {
-                        let num_points: usize = range.get("num_points").unwrap_or(500);
-                        for i in 0..num_points {
-                            let t = min + (i as f64 / (num_points - 1) as f64) * (max - min);
-                            let xy: Vec<f64> = f.call((t,)).unwrap();
-                            if xy.len() == 2 {
-                                points.push([xy[0], xy[1]]);
-                            }
-                        }
-                    }
-                    graph_lines_api.borrow_mut().push((name.clone(), points));
-                });
-                js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
-                // --- JSコード: setup/draw分離 ---
-                let js_code = r#"
-                    let a,b,k,r
-                    function setup() {
-                        // 定数やパラメータの定義
-                        a = 1.0;
-                        b = 1.0;
-                        k = 9;
-                        r = 1.0;
-                    }
-                    function draw() {
-                        // 円
-                        addParametricGraph(
-                            function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
-                            { min: 0, max: 2 * Math.PI, num_points: 1000 },
-                            "媒介変数曲線"
-                        );
-                        // 薔薇曲線
-                        addParametricGraph(
-                            function(t) {
-                                let radius = r * Math.cos(k * t);
-                                return [radius * Math.cos(t), radius * Math.sin(t)];
-                            },
-                            { min: 0, max: 2 * Math.PI, num_points: 1000 },
-                            `薔薇曲線 k=${k}`
-                        );
-                    }
-                "#;
-                // js_codeのハッシュを計算
-                let mut hasher = DefaultHasher::new();
-                js_code.hash(&mut hasher);
-                let code_hash = hasher.finish();
-                // --- js_codeのハッシュを計算・比較・保存部分を修正 ---
-                let mut need_setup = false;
-                let last_hash = ParametricPlotApp::get_js_code_hash();
-                if last_hash.map_or(true, |last| last != code_hash) {
-                    ParametricPlotApp::set_js_code_hash(code_hash);
-                    need_setup = true;
-                }
-                if let Err(e) = js_ctx.eval::<(), _>(js_code) {
-                    js_error = Some(format!("JavaScript parse error: {e:?}"));
-                    return;
-                }
-                // setup関数呼び出し（js_codeが前回と同じ場合はスキップ）
-                let setup_exists = js_ctx.eval::<bool, _>("typeof setup === 'function'").unwrap_or(false);
-                if setup_exists && need_setup {
-                    if let Err(e) = js_ctx.eval::<(), _>("setup();") {
-                        let detail = format!("setup() error: {e:?}");
-                        js_error = Some(detail);
+                        js_error = Some("setup関数が定義されていません".to_string());
                         return;
                     }
-                } else if !setup_exists {
-                    js_error = Some("setup関数が定義されていません".to_string());
-                    return;
+
+                    self.js_code_evaluated = true;
                 }
-                // draw関数呼び出し
-                let draw_exists = js_ctx.eval::<bool, _>("typeof draw === 'function'").unwrap_or(false);
-                if draw_exists {
+
+                // 初期表示時またはスライダー変更時に再描画
+                if need_redraw || self.graph_lines.borrow().is_empty() {
+                    // スライダー値をJSグローバルに注入
+                    for slider in &self.sliders {
+                        js_ctx.globals().set(slider.name.as_str(), slider.value).unwrap();
+                    }
+
+                    // グラフデータをクリア
+                    self.graph_lines.borrow_mut().clear();
+
+                    // draw関数実行
                     if let Err(e) = js_ctx.eval::<(), _>("draw();") {
-                        let detail = format!("draw() error: {e:?}");
-                        js_error = Some(detail);
+                        js_error = Some(format!("draw() error: {}", e));
                         return;
                     }
-                } else {
-                    js_error = Some("draw関数が定義されていません".to_string());
-                    return;
                 }
-                let graph_lines_final = match Rc::try_unwrap(graph_lines_rc) {
-                    Ok(rc) => rc.into_inner(),
-                    Err(rc) => rc.borrow().clone(),
-                };
-                graph_lines = graph_lines_final;
             });
+
             // --- グラフ描画 or エラー表示 ---
             if let Some(err) = js_error {
+                println!("JSエラー: {}", err);
                 ui.colored_label(egui::Color32::RED, format!("JSエラー: {}", err));
             } else {
-                let window_height = ctx.input(|input| input.screen_rect().height());
+                let window_height = ctx.input(|input| input.screen_rect().height()) * 0.8;
                 let window_width = ctx.input(|input| input.screen_rect().width());
                 let plot_size = egui::vec2(window_width, window_height);
                 let plot = Plot::new("parametric_plot")
@@ -161,9 +190,10 @@ impl App for ParametricPlotApp {
                     .data_aspect(1.0)
                     .x_axis_label("x")
                     .y_axis_label("y");
+
                 plot.show(ui, |plot_ui| {
-                    for (name, points) in &graph_lines {
-                        let line = Line::new(name.as_str(), PlotPoints::new(points.clone()))
+                    for (name, points) in self.graph_lines.borrow().iter() {
+                        let line = Line::new(name, PlotPoints::new(points.clone()))
                             .color(egui::Color32::from_rgb(200, 100, 0))
                             .name(name);
                         plot_ui.line(line);
