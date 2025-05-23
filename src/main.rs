@@ -1,5 +1,7 @@
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
+use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
+use rquickjs::function::Func;
 
 // アプリケーションの状態を保持する構造体
 struct ParametricPlotApp {
@@ -17,7 +19,7 @@ impl Default for ParametricPlotApp {
             b: 1.0,
             t_min: 0.0,
             t_max: 2.0 * std::f64::consts::PI, // 0から2πまで
-            num_points: 500, // デフォルトで500点
+            num_points: 50, // デフォルトで500点
         }
     }
 }
@@ -25,19 +27,36 @@ impl Default for ParametricPlotApp {
 impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            // --- JavaScriptで点列を生成 ---
+            let rt = Runtime::new().unwrap();
+            let js_ctx = JsContext::full(&rt).unwrap();
+            let mut points: Vec<[f64; 2]> = Vec::new();
+            js_ctx.with(|js_ctx| {
+                // RustのパラメータをJSに渡す
+                js_ctx.globals().set("a", self.a).unwrap();
+                js_ctx.globals().set("b", self.b).unwrap();
+                js_ctx.globals().set("t_min", self.t_min).unwrap();
+                js_ctx.globals().set("t_max", self.t_max).unwrap();
+                js_ctx.globals().set("num_points", self.num_points as i32).unwrap();
+                // JSで点列を生成
+                let js_code = r#"
+                    let points = [];
+                    let t_range = t_max - t_min;
+                    for (let i = 0; i < num_points; ++i) {
+                        let t = t_min + (i / (num_points - 1)) * t_range;
+                        let x = a * Math.cos(t);
+                        let y = b * Math.sin(t);
+                        points.push([x, y]);
+                    }
+                    points;
+                "#;
+                let js_points: Vec<Vec<f64>> = js_ctx.eval(js_code).unwrap();
+                points = js_points.into_iter().map(|xy| [xy[0], xy[1]]).collect();
+            });
             // ウインドウサイズを取得
             let window_height = ctx.input(|input| input.screen_rect().height());
             let window_width = ctx.input(|input| input.screen_rect().width());
             let plot_size = egui::vec2(window_width, window_height);
-            // グラフを画面いっぱいに表示（幅＝ウインドウ幅、高さ＝ウインドウ高さ）
-            let mut points: Vec<[f64; 2]> = Vec::with_capacity(self.num_points);
-            let t_range = self.t_max - self.t_min;
-            for i in 0..self.num_points {
-                let t = self.t_min + (i as f64 / (self.num_points - 1) as f64) * t_range;
-                let x = self.a * t.cos();
-                let y = self.b * t.sin();
-                points.push([x, y]);
-            }
             let line = Line::new("媒介変数曲線", PlotPoints::new(points))
                 .color(egui::Color32::from_rgb(200, 100, 0))
                 .name("媒介変数曲線");
