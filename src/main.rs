@@ -106,18 +106,24 @@ impl App for ParametricPlotApp {
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
-                    let vectors_api = self.vectors.clone();  // ベクトルAPIのためのクローン
+                    let add_slider = Func::from(move |name: String, params: rquickjs::Object| {
+                        let min: f64 = params.get("min").unwrap_or(0.0);
+                        let max: f64 = params.get("max").unwrap_or(1.0);
+                        let step: f64 = params.get("step").unwrap_or(0.1);
+                        let default: f64 = params.get("default").unwrap_or(0.0);
 
-                    // addSlider API
-                    let add_slider = Func::from(move |name: String, min: f64, max: f64, step: f64, default: f64| {
                         sliders_api.borrow_mut().push(SliderParam {
-                            name: name.clone(), min, max, step, value: default
+                            name: name.clone(),
+                            min,
+                            max,
+                            step,
+                            value: default
                         });
                     });
                     js_ctx.globals().set("addSlider", add_slider).unwrap();
 
                     // addParametricGraph API
-                    let add_parametric_graph = Func::from(move |f: rquickjs::Function, range: rquickjs::Object, name: String| -> JsResult<()> {
+                    let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object| -> JsResult<()> {
                         let min: f64 = range.get("min").unwrap_or(0.0);
                         let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
                         let delta: Option<f64> = range.get("delta").ok();
@@ -153,7 +159,7 @@ impl App for ParametricPlotApp {
                         let start: Vec<f64> = start_f.call((t,))?;
                         // ベクトルを計算
                         let vec: Vec<f64> = vec_f.call((t,))?;
-                        
+
                         if start.len() == 2 && vec.len() == 2 {
                             vectors_api.borrow_mut().push((
                                 name.clone(),
@@ -170,27 +176,27 @@ impl App for ParametricPlotApp {
                         // 円と薔薇曲線を描画する関数を定義
                         function setup() {
                             // パラメータをスライダーで定義
-                            addSlider("a", 0.1, 2.0, 0.1, 1.0);  // 円の横サイズ
-                            addSlider("b", 0.1, 2.0, 0.1, 1.0);  // 円の縦サイズ
-                            addSlider("k", 1, 20, 1, 9);         // 薔薇曲線のローブ数
-                            addSlider("r", 0.1, 2.0, 0.1, 1.0);  // 薔薇曲線の大きさ
-                            addSlider("n", 0, 5, 0.01, 1);         // ベクトルの位置
+                            addSlider("a", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 円の横サイズ
+                            addSlider("b", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 円の縦サイズ
+                            addSlider("k", { min: 1, max: 20, step: 1, default: 9 });          // 薔薇曲線のローブ数
+                            addSlider("r", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 薔薇曲線の大きさ
+                            addSlider("n", { min: 0, max: 5, step: 0.01, default: 1 });        // ベクトルの位置
                         }
                         function draw() {
                             // 円 (a,bで縦横比を制御)
                             addParametricGraph(
+                                `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
                                 function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
-                                { min: 0, max: 2 * Math.PI, num_points: 1000 },
-                                `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`
+                                { min: 0, max: 2 * Math.PI, num_points: 1000 }
                             );
                             // 薔薇曲線 (k=ローブ数, r=サイズ)
                             addParametricGraph(
+                                `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
                                 function(t) {
                                     let radius = r * Math.cos(k * t);
                                     return [radius * Math.cos(t), radius * Math.sin(t)];
                                 },
-                                { min: 0, max: 2 * Math.PI, num_points: 1000 },
-                                `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`
+                                { min: 0, max: 2 * Math.PI, num_points: 1000 }
                             );
 
                             // 円周上に接線ベクトルを描画
