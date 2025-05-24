@@ -4,6 +4,7 @@ use egui::Color32;
 use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
 use rquickjs::function::Func;
 use colored::*;
+use egui_extras::syntax_highlighting;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,18 +26,52 @@ struct ParametricPlotApp {
     js_code_evaluated: bool,
     graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>)>>>,
     vectors: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Vec<[f64; 2]>)>>>,  // ベクトルデータを保持 (名前、始点の配列、終点の配列)
+    js_code: String, // JavaScriptエディタ用
+    last_js_code: String, // 前回実行したJSコード
 }
 
 impl Default for ParametricPlotApp {
     fn default() -> Self {
         let runtime = Runtime::new().unwrap();
         let js_context = JsContext::full(&runtime).unwrap();
+        let default_js_code = r#"
+// 円と薔薇曲線を描画する関数を定義
+function setup() {
+    // パラメータをスライダーで定義
+    addSlider('a', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
+    addSlider('b', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
+    addSlider('k', { min: 1, max: 20, step: 1, default: 9 });
+    addSlider('r', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
+    addSlider('n', { min: 0, max: 5, step: 0.01, default: 1 });
+}
+function draw() {
+    addParametricGraph(
+        `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
+        function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
+        { min: 0, max: 2 * Math.PI, num_points: 1000 }
+    );
+    addParametricGraph(
+        `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
+        function(t) {
+            let radius = r * Math.cos(k * t);
+            return [radius * Math.cos(t), radius * Math.sin(t)];
+        },
+        { min: 0, max: 2 * Math.PI, num_points: 1000 }
+    );
+    let t = (n) * 2 * Math.PI;
+    let start = function(t) { return [a * Math.cos(t), b * Math.sin(t)]; };
+    let tangent = function(t) { return [-a * Math.sin(t), b * Math.cos(t)]; };
+    addVector(`接線${n}`, start, tangent, t);
+}
+"#.to_string();
         Self {
             sliders: Vec::new(),
             js_context,
             js_code_evaluated: false,
             graph_lines: Rc::new(RefCell::new(Vec::new())),
-            vectors: Rc::new(RefCell::new(Vec::new())),  // ベクトルの初期化
+            vectors: Rc::new(RefCell::new(Vec::new())),
+            js_code: default_js_code.clone(),
+            last_js_code: default_js_code,
         }
     }
 }
@@ -45,6 +80,46 @@ impl ParametricPlotApp {}
 
 impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
+        let mut js_error: Option<String> = None;
+        let mut need_redraw = false;
+        let mut js_code_changed = false;
+        egui::SidePanel::right("js_editor_panel").min_width(350.0).show(ctx, |ui| {
+            ui.heading("JavaScript エディタ");
+            ui.label("グラフ描画用のJavaScriptコードを編集できます。");
+            let mut theme = syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
+            ui.collapsing("Theme", |ui| {
+                ui.group(|ui| {
+                    theme.ui(ui);
+                    theme.clone().store_in_memory(ui.ctx());
+                });
+            });
+            let mut layouter = |ui: &egui::Ui, buf: &str, wrap_width: f32| {
+                let mut layout_job = syntax_highlighting::highlight(
+                    ui.ctx(),
+                    ui.style(),
+                    &theme,
+                    buf,
+                    "rs",
+                );
+                layout_job.wrap.max_width = wrap_width;
+                ui.fonts(|f| f.layout_job(layout_job))
+            };
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let response = ui.add(
+                    egui::TextEdit::multiline(&mut self.js_code)
+                        .font(egui::TextStyle::Monospace)
+                        .desired_rows(24)
+                        .desired_width(f32::INFINITY)
+                        .layouter(&mut layouter)
+                );
+                if response.changed() {
+                    js_code_changed = true;
+                }
+                if ui.button("グラフを更新").clicked() {
+                    js_code_changed = true;
+                }
+            });
+        });
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut js_error: Option<String> = None;
             let mut need_redraw = false;
@@ -102,8 +177,10 @@ impl App for ParametricPlotApp {
 
             // --- JavaScript関連の処理 ---
             self.js_context.with(|js_ctx| {
-                // 最初の実行時にのみJavaScript関数を定義
-                if !self.js_code_evaluated {
+                // JSコードが変更された場合は再評価
+                if js_code_changed || !self.js_code_evaluated || self.js_code != self.last_js_code {
+                    self.js_code_evaluated = false;
+                    self.last_js_code = self.js_code.clone();
                     // Rust側stdout/stderrをJSに提供
                     let stdout = Func::from(|content: String| {
                         println!("{}", content);
@@ -130,7 +207,6 @@ impl App for ParametricPlotApp {
                     if let Err(e) = js_ctx.eval::<(), _>(console_js) {
                         eprintln!("[console patch error] {e:?}");
                     }
-
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
@@ -139,7 +215,6 @@ impl App for ParametricPlotApp {
                         let max: f64 = params.get("max").unwrap_or(1.0);
                         let step: f64 = params.get("step").unwrap_or(0.1);
                         let default: f64 = params.get("default").unwrap_or(0.0);
-
                         sliders_api.borrow_mut().push(SliderParam {
                             name: name.clone(),
                             min,
@@ -149,8 +224,6 @@ impl App for ParametricPlotApp {
                         });
                     });
                     js_ctx.globals().set("addSlider", add_slider).unwrap();
-
-                    // addParametricGraph API
                     let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object| -> JsResult<()> {
                         let min: f64 = range.get("min").unwrap_or(0.0);
                         let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
@@ -179,82 +252,28 @@ impl App for ParametricPlotApp {
                         Ok(())
                     });
                     js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
-
-                    // addVector API - パラメトリック関数からベクトルを描画
-                    let vectors_api = self.vectors.clone();  // 新しいクローン
+                    let vectors_api = self.vectors.clone();
                     let add_vector = Func::from(move |name: String, start_f: rquickjs::Function, vec_f: rquickjs::Function, t: f64| -> JsResult<()> {
-                        // 始点を計算
                         let start: Vec<f64> = start_f.call((t,))?;
-                        // ベクトルを計算
                         let vec: Vec<f64> = vec_f.call((t,))?;
-
                         if start.len() == 2 && vec.len() == 2 {
                             vectors_api.borrow_mut().push((
                                 name.clone(),
-                                vec![[start[0], start[1]]],              // 始点
-                                vec![[start[0] + vec[0], start[1] + vec[1]]]  // 終点 = 始点 + ベクトル
+                                vec![[start[0], start[1]]],
+                                vec![[start[0] + vec[0], start[1] + vec[1]]]
                             ));
                         }
                         Ok(())
                     });
                     js_ctx.globals().set("addVector", add_vector).unwrap();
-
                     // JSコードの評価
-                    // ユーザーが書くコード
-                    let js_code = r#"
-                        // 円と薔薇曲線を描画する関数を定義
-                        function setup() {
-                            // パラメータをスライダーで定義
-                            addSlider("a", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 円の横サイズ
-                            addSlider("b", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 円の縦サイズ
-                            addSlider("k", { min: 1, max: 20, step: 1, default: 9 });          // 薔薇曲線のローブ数
-                            addSlider("r", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 薔薇曲線の大きさ
-                            addSlider("n", { min: 0, max: 5, step: 0.01, default: 1 });        // ベクトルの位置
-                            console.log(["a",draw]);
-                            console.log("a",draw,3, typeof draw);
-                        }
-                        function draw() {
-                            // 円 (a,bで縦横比を制御)
-                            addParametricGraph(
-                                `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
-                                function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
-                                { min: 0, max: 2 * Math.PI, num_points: 1000 }
-                            );
-                            // 薔薇曲線 (k=ローブ数, r=サイズ)
-                            addParametricGraph(
-                                `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
-                                function(t) {
-                                    let radius = r * Math.cos(k * t);
-                                    return [radius * Math.cos(t), radius * Math.sin(t)];
-                                },
-                                { min: 0, max: 2 * Math.PI, num_points: 1000 }
-                            );
-
-                            // 円周上に接線ベクトルを描画
-                            let t = (n) * 2 * Math.PI;
-                            // 円周上の点を返す関数
-                            let start = function(t) { 
-                                return [a * Math.cos(t), b * Math.sin(t)]; 
-                            };
-                            // 接線ベクトルを返す関数 (速度ベクトル)
-                            let tangent = function(t) { 
-                                return [-a * Math.sin(t), b * Math.cos(t)]; 
-                            };
-                            addVector(
-                                `接線${n}`,
-                                start,
-                                tangent,
-                                t
-                            );
-                            console.log(["a",z]);
-                        }
-                    "#;
-
-                    if let Err(e) = js_ctx.eval::<(), _>(js_code) {
-                        js_error = Some(format!("JavaScript parse error: {e:?}"));
+                    if let Err(e) = js_ctx.eval::<(), _>(self.js_code.as_str()) {
+                        // 例外内容を取得して詳細エラー表示
+                        let exc = js_ctx.catch();
+                        let exc_str = format!("{:?}", exc);
+                        js_error = Some(format!("JavaScript parse error: {e:?}\nException: {}", exc_str));
                         return;
                     }
-
                     // スライダーの初期化
                     let setup_exists = js_ctx.eval::<bool, _>("typeof setup === 'function'").unwrap_or(false);
                     if setup_exists {
@@ -268,7 +287,6 @@ impl App for ParametricPlotApp {
                         js_error = Some("setup関数が定義されていません".to_string());
                         return;
                     }
-
                     self.js_code_evaluated = true;
                 }
 
