@@ -166,15 +166,67 @@ impl App for ParametricPlotApp {
                     plot_ui.line(line);
                 }
 
-                // ベクトルを描画
-                for (name, origins, tips, color, weight) in self.vectors.borrow().iter() {
-                    let arrows = Arrows::new(
-                        name,                              // 名前
-                        PlotPoints::new(origins.clone()),  // 始点の配列
-                        PlotPoints::new(tips.clone())      // 終点の配列
-                    ).color(*color)
-                     ; // .width(*weight) was removed as egui_plot::Arrows doesn't support changing line thickness directly.
-                    plot_ui.arrows(arrows);
+                // ベクトルをLine::newを使用して描画 (本体 + 矢じり2線)
+                const ARROW_HEAD_LENGTH: f64 = 0.15; // 矢じりの各辺の長さ
+                const ARROW_HEAD_ANGLE: f64 = std::f64::consts::PI / 7.0; // 矢じりの角度 (約25.7度)
+
+                for (name, origins_vec, tips_vec, color, weight) in self.vectors.borrow().iter() {
+                    // 現在のJSの実装では、origins_vecとtips_vecは常に要素を1つだけ持つ
+                    if origins_vec.is_empty() || tips_vec.is_empty() {
+                        continue;
+                    }
+                    let origin = origins_vec[0]; // [f64; 2]
+                    let tip = tips_vec[0];       // [f64; 2]
+
+                    // 1. ベクトルの本体を描画
+                    let main_line_points = PlotPoints::new(vec![origin, tip]);
+                    let main_line = Line::new(format!("{}_main", name), main_line_points)
+                        .color(*color)
+                        .width(*weight);
+                    plot_ui.line(main_line);
+
+                    // ベクトルの方向と長さを計算
+                    let vec_dx = tip[0] - origin[0];
+                    let vec_dy = tip[1] - origin[1];
+                    let vec_len = (vec_dx.powi(2) + vec_dy.powi(2)).sqrt();
+
+                    if vec_len < 1e-6 { // ベクトルが非常に短い場合は矢じりを描画しない
+                        continue;
+                    }
+
+                    // 矢じりの長さを調整 (ベクトル本体が短い場合は矢じりも短くする)
+                    let actual_arrow_head_length = ARROW_HEAD_LENGTH.min(vec_len * 0.4);
+
+                    // 矢じりのための基準ベクトル（tipからoriginへ向かう方向）
+                    let base_arrow_dx_norm = -vec_dx / vec_len;
+                    let base_arrow_dy_norm = -vec_dy / vec_len;
+
+                    // 矢じりの一方の辺の計算
+                    let angle1 = ARROW_HEAD_ANGLE;
+                    let cos_a1 = angle1.cos();
+                    let sin_a1 = angle1.sin();
+                    let arrow1_tip_dx = base_arrow_dx_norm * cos_a1 - base_arrow_dy_norm * sin_a1;
+                    let arrow1_tip_dy = base_arrow_dx_norm * sin_a1 + base_arrow_dy_norm * cos_a1;
+                    let arrow_p1 = [
+                        tip[0] + actual_arrow_head_length * arrow1_tip_dx,
+                        tip[1] + actual_arrow_head_length * arrow1_tip_dy,
+                    ];
+
+                    // 矢じりのもう一方の辺の計算
+                    let angle2 = -ARROW_HEAD_ANGLE; // 反対側の角度
+                    let cos_a2 = angle2.cos();
+                    let sin_a2 = angle2.sin();
+                    let arrow2_tip_dx = base_arrow_dx_norm * cos_a2 - base_arrow_dy_norm * sin_a2;
+                    let arrow2_tip_dy = base_arrow_dx_norm * sin_a2 + base_arrow_dy_norm * cos_a2;
+                    let arrow_p2 = [
+                        tip[0] + actual_arrow_head_length * arrow2_tip_dx,
+                        tip[1] + actual_arrow_head_length * arrow2_tip_dy,
+                    ];
+
+                    // 2. 矢じりの線1を描画
+                    plot_ui.line(Line::new(format!("{}_arrow1", name), PlotPoints::new(vec![tip, arrow_p1])).color(*color).width(*weight));
+                    // 3. 矢じりの線2を描画
+                    plot_ui.line(Line::new(format!("{}_arrow2", name), PlotPoints::new(vec![tip, arrow_p2])).color(*color).width(*weight));
                 }
             });
 
