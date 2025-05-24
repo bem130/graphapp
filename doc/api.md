@@ -176,7 +176,3 @@ console.error('エラーが発生しました:', errorObject);
 
 *   `stdout(String)`: 文字列を標準出力へ。`console.log` の内部で使用。
 *   `stderr(String)`: 文字列を標準エラーへ。`console.error` の内部で使用。
-
----
-
-この情報が `dec/api.md` の内容として適切であれば、この内容でファイルを更新してください。
