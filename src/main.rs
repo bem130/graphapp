@@ -99,7 +99,7 @@ impl App for ParametricPlotApp {
                     ui.style(),
                     &theme,
                     buf,
-                    "rs",
+                    "js",
                 );
                 layout_job.wrap.max_width = wrap_width;
                 ui.fonts(|f| f.layout_job(layout_job))
