@@ -33,8 +33,8 @@ struct ParametricPlotApp {
     checkboxes: Vec<CheckboxParam>, // チェックボックス一覧を追加
     js_context: JsContext,
     js_code_evaluated: bool,
-    graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>)>>>,
-    vectors: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Vec<[f64; 2]>)>>>,  // ベクトルデータを保持 (名前、始点の配列、終点の配列)
+    graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Color32, f32)>>>, // (名前, 点群, 色, 太さ)
+    vectors: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Vec<[f64; 2]>, Color32, f32)>>>,  // (名前, 始点群, 終点群, 色, 太さ)
     js_code: String, // JavaScriptエディタ用
     last_js_code: String, // 前回実行したJSコード
 }
@@ -55,25 +55,29 @@ function setup() {
     addCheckbox('show', '薔薇曲線を表示する', { default: true });
 }
 function draw() {
+    // 楕円をオレンジ色、太さ2.0で描画
     addParametricGraph(
         `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
         function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
-        { min: 0, max: 2 * Math.PI, num_points: 1000 }
+        { min: 0, max: 2 * Math.PI, num_points: 1000 },
+        { color: [255, 165, 0], weight: 2.0 } 
     );
     if (show) {
+        // 薔薇曲線を緑色、太さ1.0で描画
         addParametricGraph(
             `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
             function(t) {
                 let radius = r * Math.cos(k * t);
                 return [radius * Math.cos(t), radius * Math.sin(t)];
             },
-            { min: 0, max: 2 * Math.PI, num_points: 1000 }
+            { min: 0, max: 2 * Math.PI, num_points: 1000 },
+            { color: [0, 255, 0], weight: 1.0 }
         );
     }
     let t = (n) * 2 * Math.PI;
     let start = function(t) { return [a * Math.cos(t), b * Math.sin(t)]; };
     let tangent = function(t) { return [-a * Math.sin(t), b * Math.cos(t)]; };
-    addVector(`接線${n}`, start, tangent, t);
+    addVector(`接線${n}`, start, tangent, t, { color: [0, 0, 255], weight: 2.5 }); // 接線を青色、太さ2.5で描画
 }
 
 "#.to_string();
@@ -155,19 +159,21 @@ impl App for ParametricPlotApp {
             // プロット描画
             plot.show(ui, |plot_ui| {
                 // 通常の曲線を描画
-                for (name, points) in self.graph_lines.borrow().iter() {
+                for (name, points, color, weight) in self.graph_lines.borrow().iter() {
                     let line = Line::new(name, PlotPoints::new(points.clone()))
-                        .color(Color32::from_rgb(200, 100, 0));
+                        .color(*color)
+                        .width(*weight);
                     plot_ui.line(line);
                 }
 
                 // ベクトルを描画
-                for (name, origins, tips) in self.vectors.borrow().iter() {
+                for (name, origins, tips, color, weight) in self.vectors.borrow().iter() {
                     let arrows = Arrows::new(
                         name,                              // 名前
                         PlotPoints::new(origins.clone()),  // 始点の配列
                         PlotPoints::new(tips.clone())      // 終点の配列
-                    ).color(Color32::from_rgb(0, 150, 200));
+                    ).color(*color)
+                     ; // .width(*weight) was removed as egui_plot::Arrows doesn't support changing line thickness directly.
                     plot_ui.arrows(arrows);
                 }
             });
@@ -256,11 +262,29 @@ impl App for ParametricPlotApp {
                         });
                     });
                     js_ctx.globals().set("addCheckbox", add_checkbox).unwrap();
-                    let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object| -> JsResult<()> {
+                    let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object, style: Option<rquickjs::Object>| -> JsResult<()> {
                         let min: f64 = range.get("min").unwrap_or(0.0);
                         let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
                         let delta: Option<f64> = range.get("delta").ok();
                         let mut points = Vec::new();
+
+                        let default_color = Color32::from_rgb(200, 100, 0);
+                        let default_weight = 1.5f32;
+                        let mut line_color = default_color;
+                        let mut line_weight = default_weight;
+
+                        if let Some(style_obj) = style {
+                            if let Ok(color_array) = style_obj.get::<_, rquickjs::Array>("color") {
+                                if color_array.len() >= 3 {
+                                    let r = color_array.get::<u8>(0).unwrap_or(default_color.r());
+                                    let g = color_array.get::<u8>(1).unwrap_or(default_color.g());
+                                    let b = color_array.get::<u8>(2).unwrap_or(default_color.b());
+                                    line_color = Color32::from_rgb(r, g, b);
+                                }
+                            }
+                            line_weight = style_obj.get("weight").unwrap_or(default_weight);
+                        }
+
                         if let Some(delta) = delta {
                             let mut t = min;
                             while t <= max {
@@ -280,19 +304,39 @@ impl App for ParametricPlotApp {
                                 }
                             }
                         }
-                        graph_lines_api.borrow_mut().push((name, points));
+                        graph_lines_api.borrow_mut().push((name, points, line_color, line_weight));
                         Ok(())
                     });
                     js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
                     let vectors_api = self.vectors.clone();
-                    let add_vector = Func::from(move |name: String, start_f: rquickjs::Function, vec_f: rquickjs::Function, t: f64| -> JsResult<()> {
+                    let add_vector = Func::from(move |name: String, start_f: rquickjs::Function, vec_f: rquickjs::Function, t: f64, style: Option<rquickjs::Object>| -> JsResult<()> {
                         let start: Vec<f64> = start_f.call((t,))?;
                         let vec: Vec<f64> = vec_f.call((t,))?;
+
+                        let default_color = Color32::from_rgb(0, 150, 200);
+                        let default_weight = 1.5f32;
+                        let mut arrow_color = default_color;
+                        let mut arrow_weight = default_weight;
+
+                        if let Some(style_obj) = style {
+                            if let Ok(color_array) = style_obj.get::<_, rquickjs::Array>("color") {
+                                if color_array.len() >= 3 {
+                                    let r = color_array.get::<u8>(0).unwrap_or(default_color.r());
+                                    let g = color_array.get::<u8>(1).unwrap_or(default_color.g());
+                                    let b = color_array.get::<u8>(2).unwrap_or(default_color.b());
+                                    arrow_color = Color32::from_rgb(r, g, b);
+                                }
+                            }
+                            arrow_weight = style_obj.get("weight").unwrap_or(default_weight);
+                        }
+
                         if start.len() == 2 && vec.len() == 2 {
                             vectors_api.borrow_mut().push((
                                 name.clone(),
                                 vec![[start[0], start[1]]],
-                                vec![[start[0] + vec[0], start[1] + vec[1]]]
+                                vec![[start[0] + vec[0], start[1] + vec[1]]],
+                                arrow_color,
+                                arrow_weight
                             ));
                         }
                         Ok(())
