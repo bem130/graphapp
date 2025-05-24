@@ -97,7 +97,7 @@ impl App for ParametricPlotApp {
         let mut js_error: Option<String> = None;
         let mut need_redraw = false;
         let mut js_code_changed = false;
-        egui::SidePanel::right("js_editor_panel").min_width(350.0).show(ctx, |ui| {
+        egui::SidePanel::right("js_editor_panel").min_width(600.0).show(ctx, |ui| {
             ui.heading("JavaScript エディタ");
             ui.label("グラフ描画用のJavaScriptコードを編集できます。");
             let mut theme = syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
@@ -122,8 +122,8 @@ impl App for ParametricPlotApp {
                 let response = ui.add(
                     egui::TextEdit::multiline(&mut self.js_code)
                         .font(egui::TextStyle::Monospace)
-                        .desired_rows(24)
-                        .desired_width(f32::INFINITY)
+                        .desired_width(2000.0) 
+                        .code_editor()
                         .layouter(&mut layouter)
                 );
                 if response.changed() {
