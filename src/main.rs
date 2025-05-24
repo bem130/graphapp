@@ -299,20 +299,26 @@ impl App for ParametricPlotApp {
                     let color_pickers_rc = Rc::new(RefCell::new(Vec::new()));
                     let color_pickers_api = color_pickers_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
-                    let add_slider = Func::from(move |name: String, params: rquickjs::Object| {
-                        let min: f64 = params.get("min").unwrap_or(0.0);
-                        let max: f64 = params.get("max").unwrap_or(1.0);
-                        let step: f64 = params.get("step").unwrap_or(0.1);
-                        let default: f64 = params.get("default").unwrap_or(0.0);
-                        sliders_api.borrow_mut().push(SliderParam {
-                            name: name.clone(),
+                    let add_slider = |_this: &JsValue, args: &[JsValue], context: &mut Context| {// 名前（args[0]）を文字列として抽出
+                        let name = args.get_or_undefined(0).to_string(context)?;
+                        // パラメータ（args[1]）をオブジェクトとして抽出
+                        let params = args.get_or_undefined(1).to_object(context)?;
+                        // パラメータからプロパティを抽出
+                        let min = params.get("min".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 0.0 } else { num }).unwrap_or(0.0);
+                        let max = params.get("max".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 1.0 } else { num }).unwrap_or(1.0);
+                        let step = params.get("step".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 0.1 } else { num }).unwrap_or(0.1);
+                        let default = params.get("default".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 0.0 } else { num }).unwrap_or(0.0);
+                        // 共有状態に追加（例: sliders_rc）
+                        sliders_rc.borrow_mut().push(SliderParam {
+                            name: format!("{:?}",name),
                             min,
                             max,
                             step,
-                            value: default
+                            value: default,
                         });
-                    });
-                    js_ctx.globals().set("addSlider", add_slider).unwrap();
+                        Ok(JsValue::undefined())
+                    };
+                    self.js_context.register_global_builtin_callable("addSlider".into(), 2, NativeFunction::from_copy_closure(add_slider)).unwrap();
                     // addCheckbox API
                     let add_checkbox = Func::from(move |name: String, label: String, params: Option<rquickjs::Object>| {
                         let default = params.as_ref().and_then(|p| p.get("default").ok()).unwrap_or(true);
