@@ -19,9 +19,18 @@ struct SliderParam {
     value: f64,
 }
 
+// チェックボックス情報を保持する構造体
+#[derive(Clone)]
+struct CheckboxParam {
+    name: String,   // JSで参照する変数名
+    label: String,  // チェックボックス横のラベル
+    value: bool,    // 現在値
+}
+
 // アプリケーションの状態を保持する構造体
 struct ParametricPlotApp {
     sliders: Vec<SliderParam>,
+    checkboxes: Vec<CheckboxParam>, // チェックボックス一覧を追加
     js_context: JsContext,
     js_code_evaluated: bool,
     graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>)>>>,
@@ -43,6 +52,7 @@ function setup() {
     addSlider('k', { min: 1, max: 20, step: 1, default: 9 });
     addSlider('r', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
     addSlider('n', { min: 0, max: 5, step: 0.01, default: 1 });
+    addCheckbox('show', '薔薇曲線を表示する', { default: true });
 }
 function draw() {
     addParametricGraph(
@@ -50,22 +60,26 @@ function draw() {
         function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
         { min: 0, max: 2 * Math.PI, num_points: 1000 }
     );
-    addParametricGraph(
-        `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
-        function(t) {
-            let radius = r * Math.cos(k * t);
-            return [radius * Math.cos(t), radius * Math.sin(t)];
-        },
-        { min: 0, max: 2 * Math.PI, num_points: 1000 }
-    );
+    if (show) {
+        addParametricGraph(
+            `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
+            function(t) {
+                let radius = r * Math.cos(k * t);
+                return [radius * Math.cos(t), radius * Math.sin(t)];
+            },
+            { min: 0, max: 2 * Math.PI, num_points: 1000 }
+        );
+    }
     let t = (n) * 2 * Math.PI;
     let start = function(t) { return [a * Math.cos(t), b * Math.sin(t)]; };
     let tangent = function(t) { return [-a * Math.sin(t), b * Math.cos(t)]; };
     addVector(`接線${n}`, start, tangent, t);
 }
+
 "#.to_string();
         Self {
             sliders: Vec::new(),
+            checkboxes: Vec::new(),
             js_context,
             js_code_evaluated: false,
             graph_lines: Rc::new(RefCell::new(Vec::new())),
@@ -141,13 +155,15 @@ impl App for ParametricPlotApp {
             // プロット描画
             plot.show(ui, |plot_ui| {
                 // 通常の曲線を描画
-                for (name, points) in self.graph_lines.borrow().iter() {                    let line = Line::new(name, PlotPoints::new(points.clone()))
+                for (name, points) in self.graph_lines.borrow().iter() {
+                    let line = Line::new(name, PlotPoints::new(points.clone()))
                         .color(Color32::from_rgb(200, 100, 0));
                     plot_ui.line(line);
                 }
 
                 // ベクトルを描画
-                for (name, origins, tips) in self.vectors.borrow().iter() {                    let arrows = Arrows::new(
+                for (name, origins, tips) in self.vectors.borrow().iter() {
+                    let arrows = Arrows::new(
                         name,                              // 名前
                         PlotPoints::new(origins.clone()),  // 始点の配列
                         PlotPoints::new(tips.clone())      // 終点の配列
@@ -156,11 +172,10 @@ impl App for ParametricPlotApp {
                 }
             });
 
-            // --- スライダーを重ねて表示 ---
-            if !self.sliders.is_empty() {
-                // 左上にスライダーパネルを配置
+            // --- スライダー・チェックボックスを重ねて表示 ---
+            if !self.sliders.is_empty() || !self.checkboxes.is_empty() {
+                // 左上にパラメータパネルを配置
                 egui::Window::new("パラメータ")
-                    .fixed_pos(egui::pos2(10.0, 10.0))
                     .resizable(false)
                     .show(ctx, |ui| {
                         ui.set_min_width(100.0);
@@ -169,6 +184,11 @@ impl App for ParametricPlotApp {
                                 .text(&slider.name)
                                 .step_by(slider.step)).changed() 
                             {
+                                need_redraw = true;
+                            }
+                        }
+                        for checkbox in &mut self.checkboxes {
+                            if ui.checkbox(&mut checkbox.value, &checkbox.label).changed() {
                                 need_redraw = true;
                             }
                         }
@@ -209,6 +229,8 @@ impl App for ParametricPlotApp {
                     }
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
+                    let checkboxes_rc = Rc::new(RefCell::new(Vec::new()));
+                    let checkboxes_api = checkboxes_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
                     let add_slider = Func::from(move |name: String, params: rquickjs::Object| {
                         let min: f64 = params.get("min").unwrap_or(0.0);
@@ -224,6 +246,16 @@ impl App for ParametricPlotApp {
                         });
                     });
                     js_ctx.globals().set("addSlider", add_slider).unwrap();
+                    // addCheckbox API
+                    let add_checkbox = Func::from(move |name: String, label: String, params: Option<rquickjs::Object>| {
+                        let default = params.as_ref().and_then(|p| p.get("default").ok()).unwrap_or(true);
+                        checkboxes_api.borrow_mut().push(CheckboxParam {
+                            name: name.clone(),
+                            label: label.clone(),
+                            value: default,
+                        });
+                    });
+                    js_ctx.globals().set("addCheckbox", add_checkbox).unwrap();
                     let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object| -> JsResult<()> {
                         let min: f64 = range.get("min").unwrap_or(0.0);
                         let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
@@ -282,6 +314,7 @@ impl App for ParametricPlotApp {
                             return;
                         }
                         self.sliders = sliders_rc.borrow().clone();
+                        self.checkboxes = checkboxes_rc.borrow().clone();  // チェックボックスの初期化
                         need_redraw = true;
                     } else {
                         js_error = Some("setup関数が定義されていません".to_string());
@@ -290,11 +323,15 @@ impl App for ParametricPlotApp {
                     self.js_code_evaluated = true;
                 }
 
-                // 初期表示時またはスライダー変更時に再描画
+                // 初期表示時またはスライダー・チェックボックス変更時に再描画
                 if need_redraw || self.graph_lines.borrow().is_empty() {
                     // スライダー値をJSグローバルに注入
                     for slider in &self.sliders {
                         js_ctx.globals().set(slider.name.as_str(), slider.value).unwrap();
+                    }
+                    // チェックボックス値をJSグローバルに注入
+                    for checkbox in &self.checkboxes {
+                        js_ctx.globals().set(checkbox.name.as_str(), checkbox.value).unwrap();
                     }
 
                     // グラフデータをクリア
