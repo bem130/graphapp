@@ -1,7 +1,7 @@
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
-use boa_engine::{Context as BoaContext, Source, JsResult, JsValue, JsArgs, NativeFunction, Context};
+use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, property::PropertyKey};
 use colored::*;
 use egui_extras::syntax_highlighting;
 
@@ -276,247 +276,288 @@ impl App for ParametricPlotApp {
                 };
                 self.js_context.register_global_builtin_callable("stderr".into(), 1, NativeFunction::from_copy_closure(stderr)).unwrap();
 
-                    // JS側でconsole.log/console.errorをstdout/stderr経由でJSON出力するように定義
-                    let console_js = r#"
-                        try {
-                            if (typeof globalThis.console !== 'object' || globalThis.console === null) {
-                                globalThis.console = {};
-                            }
-                            globalThis.console.log = function(...args) {
-                                try { stdout(JSON.stringify(args)); } catch(e) {}
-                            };
-                            globalThis.console.error = function(...args) {
-                                try { stderr(JSON.stringify(args)); } catch(e) {}
-                            };
-                        } catch(e) { stderr('[console patch error] ' + e); }
-                    "#;
-                    self.js_context.eval(Source::from_bytes(console_js));
+                // JS側でconsole.log/console.errorをstdout/stderr経由でJSON出力するように定義
+                let console_js = r#"
+                    try {
+                        if (typeof globalThis.console !== 'object' || globalThis.console === null) {
+                            globalThis.console = {};
+                        }
+                        globalThis.console.log = function(...args) {
+                            try { stdout(JSON.stringify(args)); } catch(e) {}
+                        };
+                        globalThis.console.error = function(...args) {
+                            try { stderr(JSON.stringify(args)); } catch(e) {}
+                        };
+                    } catch(e) { stderr('[console patch error] ' + e); }
+                "#;
+                self.js_context.eval(Source::from_bytes(console_js));
 
-                    let sliders_rc = Rc::new(RefCell::new(Vec::new()));
-                    let sliders_api = sliders_rc.clone();
-                    let checkboxes_rc = Rc::new(RefCell::new(Vec::new()));
-                    let checkboxes_api = checkboxes_rc.clone();
-                    let color_pickers_rc = Rc::new(RefCell::new(Vec::new()));
-                    let color_pickers_api = color_pickers_rc.clone();
-                    let graph_lines_api = self.graph_lines.clone();
-                    let add_slider = |_this: &JsValue, args: &[JsValue], context: &mut Context| {// 名前（args[0]）を文字列として抽出
-                        let name = args.get_or_undefined(0).to_string(context)?;
-                        // パラメータ（args[1]）をオブジェクトとして抽出
-                        let params = args.get_or_undefined(1).to_object(context)?;
-                        // パラメータからプロパティを抽出
-                        let min = params.get("min".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 0.0 } else { num }).unwrap_or(0.0);
-                        let max = params.get("max".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 1.0 } else { num }).unwrap_or(1.0);
-                        let step = params.get("step".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 0.1 } else { num }).unwrap_or(0.1);
-                        let default = params.get("default".into(), context).and_then(|v| v.to_number(context)).map(|num| if num.is_nan() { 0.0 } else { num }).unwrap_or(0.0);
-                        // 共有状態に追加（例: sliders_rc）
-                        sliders_rc.borrow_mut().push(SliderParam {
-                            name: format!("{:?}",name),
-                            min,
-                            max,
-                            step,
-                            value: default,
-                        });
-                        Ok(JsValue::undefined())
-                    };
-                    self.js_context.register_global_builtin_callable("addSlider".into(), 2, NativeFunction::from_copy_closure(add_slider)).unwrap();
-                    // addCheckbox API
-                    let add_checkbox = Func::from(move |name: String, label: String, params: Option<rquickjs::Object>| {
-                        let default = params.as_ref().and_then(|p| p.get("default").ok()).unwrap_or(true);
-                        checkboxes_api.borrow_mut().push(CheckboxParam {
-                            name: name.clone(),
-                            label: label.clone(),
-                            value: default,
-                        });
+                let sliders_rc = Rc::new(RefCell::new(Vec::new()));
+                let sliders_api = sliders_rc.clone();
+                let checkboxes_rc = Rc::new(RefCell::new(Vec::new()));
+                let checkboxes_api = checkboxes_rc.clone();
+                let color_pickers_rc = Rc::new(RefCell::new(Vec::new()));
+                let color_pickers_api = color_pickers_rc.clone();
+                let graph_lines_api = self.graph_lines.clone();
+                let vectors_api = self.vectors.clone();
+
+                // addSlider API
+                let add_slider = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let name = args.get_or_undefined(0).to_string(context)?;
+                    let params = args.get_or_undefined(1).to_object(context)?;
+                    
+                    let min = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("min")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
+                    let max = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("max")), context).and_then(|v| v.to_number(context)).unwrap_or(1.0);
+                    let step = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("step")), context).and_then(|v| v.to_number(context)).unwrap_or(0.1);
+                    let default = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("default")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
+                    
+                    sliders_api.borrow_mut().push(SliderParam {
+                        name: format!("{:?}", name),
+                        min,
+                        max,
+                        step,
+                        value: default,
                     });
-                    js_ctx.globals().set("addCheckbox", add_checkbox).unwrap();
-                    // addColorpicker API
-                    let add_color_picker = Func::from(move |name: String, params: Option<rquickjs::Object>| {
-                        let mut default_color_val = Color32::from_rgb(255, 255, 255); // デフォルトは不透明の白
-                        if let Some(p_obj) = params {
-                            if let Ok(color_array) = p_obj.get::<_, rquickjs::Array>("default") {
-                                if color_array.len() >= 3 {
-                                    let r = color_array.get::<u8>(0).unwrap_or(255);
-                                    let g = color_array.get::<u8>(1).unwrap_or(255);
-                                    let b = color_array.get::<u8>(2).unwrap_or(255);
-                                    // アルファ値は無視し、常に不透明 (from_rgbがA=255とする)
+                    Ok(JsValue::undefined())
+                };
+                unsafe { self.js_context.register_global_builtin_callable("addSlider".into(), 2, NativeFunction::from_closure(add_slider)).unwrap(); }
+
+                // addCheckbox API
+                let add_checkbox = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let name = args.get_or_undefined(0).to_string(context)?;
+                    let label = args.get_or_undefined(1).to_string(context)?;
+                    let params = args.get_or_undefined(2).to_object(context)?;
+                    
+                    let default = if let Ok(default_val) = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("default")), context) {
+                        default_val.as_boolean().unwrap_or(true)
+                    } else {
+                        true
+                    };
+
+                    checkboxes_api.borrow_mut().push(CheckboxParam {
+                        name: format!("{:?}", name),
+                        label: format!("{:?}", label),
+                        value: default,
+                    });
+                    Ok(JsValue::undefined())
+                };
+                unsafe { self.js_context.register_global_builtin_callable("addCheckbox".into(), 3, NativeFunction::from_closure(add_checkbox)).unwrap(); }
+
+                // addColorpicker API
+                let add_color_picker = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let name = args.get_or_undefined(0).to_string(context)?;
+                    let params = args.get_or_undefined(1).to_object(context)?;
+                    let mut default_color_val = Color32::from_rgb(255, 255, 255); // デフォルトは白
+                    if let Ok(js_val) = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("default")), context) {
+                        if let Some(obj) = js_val.as_object() {
+                            if obj.is_array() {
+                                let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                                if len >= 3 {
+                                    let r = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(255.0) as u8;
+                                    let g = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(255.0) as u8;
+                                    let b = obj.get(2, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(255.0) as u8;
                                     default_color_val = Color32::from_rgb(r, g, b);
                                 }
                             }
                         }
-                        color_pickers_api.borrow_mut().push(ColorPickerParam {
-                            name: name.clone(),
-                            value: default_color_val,
-                        });
+                    }
+                    color_pickers_api.borrow_mut().push(ColorPickerParam {
+                        name: format!("{:?}", name),
+                        value: default_color_val,
                     });
-                    js_ctx.globals().set("addColorpicker", add_color_picker).unwrap();
-                    let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object, style: Option<rquickjs::Object>| -> JsResult<()> {
-                        let min: f64 = range.get("min").unwrap_or(0.0);
-                        let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
-                        let delta: Option<f64> = range.get("delta").ok();
-                        let mut points = Vec::new();
+                    Ok(JsValue::undefined())
+                };
+                unsafe { self.js_context.register_global_builtin_callable("addColorpicker".into(), 2, NativeFunction::from_closure(add_color_picker)).unwrap(); }
 
-                        const DEFAULT_GRAPH_COLOR: Color32 = Color32::from_rgb(200, 100, 0); // 不透明
-                        const DEFAULT_GRAPH_WEIGHT: f32 = 1.5;
-                        let mut line_color = DEFAULT_GRAPH_COLOR;
-                        let mut line_weight = DEFAULT_GRAPH_WEIGHT;
-
-                        if let Some(style_obj) = style {
-                            if let Ok(color_array) = style_obj.get::<_, rquickjs::Array>("color") {
-                                if color_array.len() >= 3 {
-                                    let r = color_array.get::<u8>(0).unwrap_or(DEFAULT_GRAPH_COLOR.r());
-                                    let g = color_array.get::<u8>(1).unwrap_or(DEFAULT_GRAPH_COLOR.g());
-                                    let b = color_array.get::<u8>(2).unwrap_or(DEFAULT_GRAPH_COLOR.b());
-                                    // アルファ値は無視し、常に不透明
+                // addParametricGraph API
+                let add_parametric_graph = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let name = args.get_or_undefined(0).to_string(context)?;
+                    let f = args.get_or_undefined(1).as_object()
+                        .ok_or_else(|| boa_engine::JsNativeError::typ().with_message("Second argument must be a function"))?;
+                    let range = args.get_or_undefined(2).to_object(context)?;
+                    let style = args.get_or_undefined(3).to_object(context)?;
+                    let min: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("min")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
+                    let max: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("max")), context).and_then(|v| v.to_number(context)).unwrap_or(2.0 * std::f64::consts::PI);
+                    let num_points: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("num_points")), context).and_then(|v| v.to_number(context)).unwrap_or(500.0);
+                    let delta: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("delta")), context).and_then(|v| v.to_number(context)).unwrap_or((max - min) / num_points);
+                    const DEFAULT_GRAPH_COLOR: Color32 = Color32::from_rgb(200, 100, 0);
+                    const DEFAULT_GRAPH_WEIGHT: f32 = 1.5;
+                    let mut line_color = DEFAULT_GRAPH_COLOR;
+                    let mut line_weight = DEFAULT_GRAPH_WEIGHT;
+                    if let Ok(js_val) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("color")), context) {
+                        if let Some(obj) = js_val.as_object() {
+                            if obj.is_array() {
+                                let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                                if len >= 3 {
+                                    let r = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(200.0) as u8;
+                                    let g = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(100.0) as u8;
+                                    let b = obj.get(2, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0) as u8;
                                     line_color = Color32::from_rgb(r, g, b);
                                 }
                             }
-                            line_weight = style_obj.get("weight").unwrap_or(DEFAULT_GRAPH_WEIGHT);
                         }
-
-                        if let Some(delta) = delta {
-                            let mut t = min;
-                            while t <= max {
-                                let xy: Vec<f64> = f.call((t,))?;
-                                if xy.len() == 2 {
-                                    points.push([xy[0], xy[1]]);
-                                }
-                                t += delta;
-                            }
-                        } else {
-                            let num_points: usize = range.get("num_points").unwrap_or(500);
-                            for i in 0..num_points {
-                                let t = min + (i as f64 / (num_points - 1) as f64) * (max - min);
-                                let xy: Vec<f64> = f.call((t,))?;
-                                if xy.len() == 2 {
-                                    points.push([xy[0], xy[1]]);
-                                }
-                            }
-                        }
-                        graph_lines_api.borrow_mut().push((name, points, line_color, line_weight));
-                        Ok(())
-                    });
-                    js_ctx.globals().set("addParametricGraph", add_parametric_graph).unwrap();
-                    let vectors_api = self.vectors.clone();
-                    let add_vector = Func::from(move |name: String, start_f: rquickjs::Function, vec_f: rquickjs::Function, t: f64, style: Option<rquickjs::Object>| -> JsResult<()> {
-                        let start: Vec<f64> = start_f.call((t,))?;
-                        let vec: Vec<f64> = vec_f.call((t,))?;
-
-                        const DEFAULT_ARROW_COLOR: Color32 = Color32::from_rgb(0, 150, 200); // 不透明
-                        const DEFAULT_ARROW_WEIGHT: f32 = 1.5;
-                        let mut arrow_color = DEFAULT_ARROW_COLOR;
-                        let mut arrow_weight = DEFAULT_ARROW_WEIGHT;
-
-                        if let Some(style_obj) = style {
-                            if let Ok(color_array) = style_obj.get::<_, rquickjs::Array>("color") {
-                                if color_array.len() >= 3 {
-                                    let r = color_array.get::<u8>(0).unwrap_or(DEFAULT_ARROW_COLOR.r());
-                                    let g = color_array.get::<u8>(1).unwrap_or(DEFAULT_ARROW_COLOR.g());
-                                    let b = color_array.get::<u8>(2).unwrap_or(DEFAULT_ARROW_COLOR.b());
-                                    // アルファ値は無視し、常に不透明
-                                    arrow_color = Color32::from_rgb(r, g, b);
-                                }
-                            }
-                            arrow_weight = style_obj.get("weight").unwrap_or(DEFAULT_ARROW_WEIGHT);
-                        }
-
-                        if start.len() == 2 && vec.len() == 2 {
-                            vectors_api.borrow_mut().push((
-                                name.clone(),
-                                vec![[start[0], start[1]]],
-                                vec![[start[0] + vec[0], start[1] + vec[1]]],
-                                arrow_color,
-                                arrow_weight
-                            ));
-                        }
-                        Ok(())
-                    });
-                    js_ctx.globals().set("addVector", add_vector).unwrap();
-                    // JSコードの評価
-                    if let Err(e) = js_ctx.eval::<(), _>(self.js_code.as_str()) {
-                        // 例外内容を取得して詳細エラー表示
-                        let exc = js_ctx.catch();
-                        let exc_str = format!("{:?}", exc);
-                        js_error = Some(format!("JavaScript parse error: {e:?}\nException: {}", exc_str));
-                        return;
                     }
-                    // スライダーの初期化
-                    let setup_exists = js_ctx.eval::<bool, _>("typeof setup === 'function'").unwrap_or(false);
-                    if setup_exists {
-                        if let Err(e) = js_ctx.eval::<(), _>("try {setup();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}") {
-                            js_error = Some(format!("setup() error: {e:?}"));
-                            return;
-                        }
-                        self.sliders = sliders_rc.borrow().clone();
-                        self.checkboxes = checkboxes_rc.borrow().clone();  // チェックボックスの初期化
-                        self.color_pickers = color_pickers_rc.borrow().clone(); // カラーピッカーの初期化
-                        need_redraw = true;
-                    } else {
-                        js_error = Some("setup関数が定義されていません".to_string());
-                        return;
+                    if let Ok(weight) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("weight")), context) {
+                        line_weight = weight.to_number(context).unwrap_or(DEFAULT_GRAPH_WEIGHT as f64) as f32;
                     }
+                    let mut points = Vec::new();
+                    let mut t = min;
+                    while t <= max {
+                        let args = [JsValue::from(t)];
+                        if let Ok(result) = f.call(&JsValue::undefined(), &args, context) {
+                            if let Some(obj) = result.as_object() {
+                                if obj.is_array() {
+                                    let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                                    if len >= 2 {
+                                        let x = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                        let y = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                        points.push([x, y]);
+                                    }
+                                }
+                            }
+                        }
+                        t += delta;
+                    }
+                    graph_lines_api.borrow_mut().push((format!("{:?}", name), points, line_color, line_weight));
+                    Ok(JsValue::undefined())
+                };
+                unsafe { self.js_context.register_global_builtin_callable("addParametricGraph".into(), 4, NativeFunction::from_closure(add_parametric_graph)).unwrap(); }
+
+                // addVector API
+                let add_vector = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let name = args.get_or_undefined(0).to_string(context)?;
+                    let origins = args.get_or_undefined(1).to_object(context)?;
+                    let tips = args.get_or_undefined(2).to_object(context)?;
+                    let style = args.get_or_undefined(3).to_object(context)?;
+                    let mut color = Color32::from_rgb(0, 0, 255);
+                    let mut weight = 1.0;
+                    if let Ok(js_val) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("color")), context) {
+                        if let Some(obj) = js_val.as_object() {
+                            if obj.is_array() {
+                                let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                                if len >= 3 {
+                                    let r = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0) as u8;
+                                    let g = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0) as u8;
+                                    let b = obj.get(2, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(255.0) as u8;
+                                    color = Color32::from_rgb(r, g, b);
+                                }
+                            }
+                        }
+                    }
+                    if let Ok(weight_val) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("weight")), context) {
+                        weight = weight_val.to_number(context).unwrap_or(1.0) as f32;
+                    }
+                    let mut origins_vec = Vec::new();
+                    let mut tips_vec = Vec::new();
+                    if origins.is_array() {
+                        let len = origins.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                        for i in 0..len {
+                            if let Ok(val) = origins.get(i, context) {
+                                if let Some(obj) = val.as_object() {
+                                    if obj.is_array() {
+                                        let x = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                        let y = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                        origins_vec.push([x, y]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if tips.is_array() {
+                        let len = tips.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                        for i in 0..len {
+                            if let Ok(val) = tips.get(i, context) {
+                                if let Some(obj) = val.as_object() {
+                                    if obj.is_array() {
+                                        let x = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                        let y = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                        tips_vec.push([x, y]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    vectors_api.borrow_mut().push((format!("{:?}", name), origins_vec, tips_vec, color, weight));
+                    Ok(JsValue::undefined())
+                };
+                unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 4, NativeFunction::from_closure(add_vector)).unwrap(); }
+
+                if js_code_changed || !self.js_code_evaluated {
+                    self.sliders.clear();
+                    self.checkboxes.clear();
+                    self.color_pickers.clear();
+                    self.graph_lines.borrow_mut().clear();
+                    self.vectors.borrow_mut().clear();
+
+                    // Setup関数の実行
+                    if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof setup === 'function') setup();")) {
+                        js_error = Some(format!("Setup error: {:?}", e));
+                    }
+
+                    // Draw関数の実行
+                    if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof draw === 'function') draw();")) {
+                        js_error = Some(format!("Draw error: {:?}", e));
+                    }
+
                     self.js_code_evaluated = true;
                 }
-
-                // 初期表示時またはスライダー・チェックボックス変更時に再描画
-                if need_redraw || self.graph_lines.borrow().is_empty() {
-                    // スライダー値をJSグローバルに注入
-                    for slider in &self.sliders {
-                        js_ctx.globals().set(slider.name.as_str(), slider.value).unwrap();
-                    }
-                    // チェックボックス値をJSグローバルに注入
-                    for checkbox in &self.checkboxes {
-                        js_ctx.globals().set(checkbox.name.as_str(), checkbox.value).unwrap();
-                    }
-                    // カラーピッカー値をJSグローバルに注入 ([r,g,b] の3要素配列として)
-                    for picker in &self.color_pickers {
-                        let js_array = match rquickjs::Array::new(js_ctx.clone()) {
-                            Ok(arr) => arr,
-                            Err(e) => {
-                                js_error = Some(format!("Failed to create JS array for color picker {}: {:?}", picker.name, e));
-                                return;
-                            }
-                        };
-                        if let Err(e) = js_array.set(0, picker.value.r()) {
-                            js_error = Some(format!("Failed to set R for color picker {}: {:?}", picker.name, e));
-                            return;
-                        }
-                        if let Err(e) = js_array.set(1, picker.value.g()) {
-                            js_error = Some(format!("Failed to set G for color picker {}: {:?}", picker.name, e));
-                            return;
-                        }
-                        if let Err(e) = js_array.set(2, picker.value.b()) {
-                            js_error = Some(format!("Failed to set B for color picker {}: {:?}", picker.name, e));
-                            return;
-                        }
-                        // アルファ値は注入しない
-                        if let Err(e) = js_ctx.globals().set(picker.name.as_str(), js_array) {
-                            js_error = Some(format!("Failed to set JS global for color picker {}: {:?}", picker.name, e));
-                            return;
-                        }
-                    }
-
-                    // グラフデータをクリア
-                    self.graph_lines.borrow_mut().clear();
-                    self.vectors.borrow_mut().clear();  // ベクトルデータのクリア
-
-                    // draw関数実行
-                    if let Err(e) = js_ctx.eval::<(), _>("try {draw();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}") {
-                        js_error = Some(format!("draw() error: {}", e));
-                        return;
-                    }
-                }
-            });
-
-            // エラー表示（もしあれば）
-            if let Some(err) = js_error {
-                egui::Window::new("エラー")
-                    .fixed_pos(egui::pos2(10.0, ui.available_rect_before_wrap().bottom() - 40.0))
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        ui.colored_label(egui::Color32::RED, format!("JSエラー: {}", err));
-                    });
-                println!("JSエラー: {}", err);
             }
+
+            // グラフの再描画フラグ
+            if need_redraw {
+                // Rust側の状態からJS側の状態を再構築
+                let mut new_sliders = Vec::new();
+                let mut new_checkboxes = Vec::new();
+                let mut new_color_pickers = Vec::new();
+                let mut new_graph_lines = Vec::new();
+                let mut new_vectors = Vec::new();
+
+                // スライダーの再構築
+                for slider in &self.sliders {
+                    new_sliders.push(SliderParam {
+                        name: slider.name.clone(),
+                        min: slider.min,
+                        max: slider.max,
+                        step: slider.step,
+                        value: slider.value,
+                    });
+                }
+
+                // チェックボックスの再構築
+                for checkbox in &self.checkboxes {
+                    new_checkboxes.push(CheckboxParam {
+                        name: checkbox.name.clone(),
+                        label: checkbox.label.clone(),
+                        value: checkbox.value,
+                    });
+                }
+
+                // カラーピッカーの再構築
+                for picker in &self.color_pickers {
+                    new_color_pickers.push(ColorPickerParam {
+                        name: picker.name.clone(),
+                        value: picker.value,
+                    });
+                }
+
+                // グラフ線の再構築
+                for (name, points, color, weight) in self.graph_lines.borrow().iter() {
+                    new_graph_lines.push((name.clone(), points.clone(), *color, *weight));
+                }
+
+                // ベクトルの再構築
+                for (name, origins_vec, tips_vec, color, weight) in self.vectors.borrow().iter() {
+                    new_vectors.push((name.clone(), origins_vec.clone(), tips_vec.clone(), *color, *weight));
+                }
+
+                // 新しい状態を適用
+                self.sliders = new_sliders;
+                self.checkboxes = new_checkboxes;
+                self.color_pickers = new_color_pickers;
+                self.graph_lines = Rc::new(RefCell::new(new_graph_lines));
+                self.vectors = Rc::new(RefCell::new(new_vectors));
+            }
+        });
     }
 }
 
