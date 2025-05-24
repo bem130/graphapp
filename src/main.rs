@@ -3,6 +3,7 @@ use egui_plot::{Line, Plot, PlotPoints, Arrows};
 use egui::Color32;
 use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
 use rquickjs::function::Func;
+use colored::*;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -69,7 +70,7 @@ impl App for ParametricPlotApp {
                         .color(Color32::from_rgb(200, 100, 0));
                     plot_ui.line(line);
                 }
-                
+
                 // ベクトルを描画
                 for (name, origins, tips) in self.vectors.borrow().iter() {                    let arrows = Arrows::new(
                         name,                              // 名前
@@ -103,18 +104,32 @@ impl App for ParametricPlotApp {
             self.js_context.with(|js_ctx| {
                 // 最初の実行時にのみJavaScript関数を定義
                 if !self.js_code_evaluated {
-                    let log_func = Func::from(|args: Vec<rquickjs::Value>| {
-                        let joined = args.iter().map(|v| format!("{:#?}", v)).collect::<Vec<_>>().join(" ");
-                        println!("[console.log]\n{}", joined);
+                    // Rust側stdout/stderrをJSに提供
+                    let stdout = Func::from(|content: String| {
+                        println!("{}", content);
                     });
-                    let error_func = Func::from(|args: Vec<rquickjs::Value>| {
-                        let joined = args.iter().map(|v| format!("{:#?}", v)).collect::<Vec<_>>().join(" ");
-                        eprintln!("[console.error]\n{}", joined);
+                    js_ctx.globals().set("stdout", stdout).unwrap();
+                    let stderr = Func::from(|content: String| {
+                        eprintln!("{}", content.red());
                     });
-                    let console = rquickjs::Object::new(js_ctx.clone()).unwrap();
-                    console.set("log", log_func).unwrap();
-                    console.set("error", error_func).unwrap();
-                    js_ctx.globals().set("console", console).unwrap();
+                    js_ctx.globals().set("stderr", stderr).unwrap();
+                    // JS側でconsole.log/console.errorをstdout/stderr経由でJSON出力するように定義
+                    let console_js = r#"
+                        try {
+                            if (typeof globalThis.console !== 'object' || globalThis.console === null) {
+                                globalThis.console = {};
+                            }
+                            globalThis.console.log = function(...args) {
+                                try { stdout(JSON.stringify(args)); } catch(e) {}
+                            };
+                            globalThis.console.error = function(...args) {
+                                try { stderr(JSON.stringify(args)); } catch(e) {}
+                            };
+                        } catch(e) { stderr('[console patch error] ' + e); }
+                    "#;
+                    if let Err(e) = js_ctx.eval::<(), _>(console_js) {
+                        eprintln!("[console patch error] {e:?}");
+                    }
 
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
@@ -185,6 +200,7 @@ impl App for ParametricPlotApp {
                     js_ctx.globals().set("addVector", add_vector).unwrap();
 
                     // JSコードの評価
+                    // ユーザーが書くコード
                     let js_code = r#"
                         // 円と薔薇曲線を描画する関数を定義
                         function setup() {
@@ -194,7 +210,8 @@ impl App for ParametricPlotApp {
                             addSlider("k", { min: 1, max: 20, step: 1, default: 9 });          // 薔薇曲線のローブ数
                             addSlider("r", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 薔薇曲線の大きさ
                             addSlider("n", { min: 0, max: 5, step: 0.01, default: 1 });        // ベクトルの位置
-                            console.log(["a",a]);
+                            console.log(["a",draw]);
+                            console.log("a",draw,3, typeof draw);
                         }
                         function draw() {
                             // 円 (a,bで縦横比を制御)
@@ -241,7 +258,7 @@ impl App for ParametricPlotApp {
                     // スライダーの初期化
                     let setup_exists = js_ctx.eval::<bool, _>("typeof setup === 'function'").unwrap_or(false);
                     if setup_exists {
-                        if let Err(e) = js_ctx.eval::<(), _>("try {setup();} catch (e) {console.error([e]);}") {
+                        if let Err(e) = js_ctx.eval::<(), _>("try {setup();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}") {
                             js_error = Some(format!("setup() error: {e:?}"));
                             return;
                         }
@@ -267,7 +284,7 @@ impl App for ParametricPlotApp {
                     self.vectors.borrow_mut().clear();  // ベクトルデータのクリア
 
                     // draw関数実行
-                    if let Err(e) = js_ctx.eval::<(), _>("try {draw();} catch (e) {console.error([e]);}") {
+                    if let Err(e) = js_ctx.eval::<(), _>("try {draw();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}") {
                         js_error = Some(format!("draw() error: {}", e));
                         return;
                     }
