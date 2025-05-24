@@ -335,6 +335,7 @@ impl App for ParametricPlotApp {
                         true
                     };
 
+                    println!("checkbox {:?}",name);
                     checkboxes_api.borrow_mut().push(CheckboxParam {
                         name: format!("{:?}", name),
                         label: format!("{:?}", label),
@@ -489,114 +490,128 @@ impl App for ParametricPlotApp {
                 };
                 unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 5, NativeFunction::from_closure(add_vector)).unwrap(); }
 
-                // --- setup()実行後にUI値をグローバル変数として注入しdraw()を呼ぶ ---
-                if js_code_changed || !self.js_code_evaluated {
-                    self.sliders.clear();
-                    self.checkboxes.clear();
-                    self.color_pickers.clear();
-                    self.graph_lines.borrow_mut().clear();
-                    self.vectors.borrow_mut().clear();
+                // self.sliders.clear();
+                // self.checkboxes.clear();
+                // self.color_pickers.clear();
+                // self.graph_lines.borrow_mut().clear();
+                // self.vectors.borrow_mut().clear();
 
-                    // コードの読み込み
-                    println!("load");
-                    if let Err(e) = self.js_context.eval(Source::from_bytes(self.js_code.as_str())) {
-                        js_error = Some(format!("Load error: {:?}", e));
-                    }
-
-                    // Setup関数の実行
-                    println!("setup");
-                    if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof setup === 'function') setup();")) {
-                        js_error = Some(format!("Setup error: {:?}", e));
-                    }
-
-                    // UI値をグローバル変数として注入
-                    for slider in &self.sliders {
-                        let key = js_string!(slider.name.as_str());
-                        self.js_context.register_global_property(key, slider.value, Attribute::all()).ok();
-                    }
-                    for checkbox in &self.checkboxes {
-                        let key = js_string!(checkbox.name.as_str());
-                        self.js_context.register_global_property(key, checkbox.value, Attribute::all()).ok();
-                    }
-                    for picker in &self.color_pickers {
-                        let key = js_string!(picker.name.as_str());
-                        // Array(3)をグローバルから作成
-                        let global = self.js_context.global_object();
-                        let array_ctor = global.get(js_string!("Array"), &mut self.js_context).unwrap();
-                        let array_constructor = array_ctor.as_constructor().expect("Array is not a constructor");
-                        let arr = array_constructor.construct(&[JsValue::from(3)], None, &mut self.js_context).unwrap();
-                        // 配列に色の値をセット
-                        for (i, &v) in [picker.value.r(), picker.value.g(), picker.value.b()].iter().enumerate() {
-                            let index = i as i32; // Using i32 which implements Into<PropertyKey>
-                            let val = JsValue::from(v as u32);
-                            arr.set(index, val, false, &mut self.js_context).ok(); // Added 'false' for throw parameter
-                        }
-                        self.js_context.register_global_property(key, arr, Attribute::all()).ok();
-                    }
-
-                    // Draw関数の実行
-                    println!("draw");
-                    if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof draw === 'function') draw();")) {
-                        js_error = Some(format!("Draw error: {:?}", e));
-                    }
-
-                    self.js_code_evaluated = true;
+                // コードの読み込み
+                println!("load");
+                if let Err(e) = self.js_context.eval(Source::from_bytes(self.js_code.as_str())) {
+                    js_error = Some(format!("Load error: {:?}", e));
                 }
+
+                // Setup関数の実行
+                println!("setup");
+                if let Err(e) = self.js_context.eval(Source::from_bytes("try {setup();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}")) {
+                    js_error = Some(format!("Setup error: {:?}", e));
+                    return;
+                }
+
+                self.sliders = sliders_rc.borrow().clone();
+                self.checkboxes = checkboxes_rc.borrow().clone();
+                self.color_pickers = color_pickers_rc.borrow().clone();
+                need_redraw = true;
+
+                self.js_code_evaluated = true;
+
+
+                // // Draw関数の実行
+                // println!("draw");
+                // if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof draw === 'function') draw();")) {
+                //     js_error = Some(format!("Draw error: {:?}", e));
+                // }
+
+                // self.js_code_evaluated = true;
             }
 
             // グラフの再描画フラグ
-            if need_redraw {
-                // Rust側の状態からJS側の状態を再構築
-                let mut new_sliders = Vec::new();
-                let mut new_checkboxes = Vec::new();
-                let mut new_color_pickers = Vec::new();
-                let mut new_graph_lines = Vec::new();
-                let mut new_vectors = Vec::new();
-
-                // スライダーの再構築
+            if need_redraw || self.graph_lines.borrow().is_empty() {
+                // UI値をグローバル変数として注入
                 for slider in &self.sliders {
-                    new_sliders.push(SliderParam {
-                        name: slider.name.clone(),
-                        min: slider.min,
-                        max: slider.max,
-                        step: slider.step,
-                        value: slider.value,
-                    });
+                    let key = js_string!(slider.name.as_str());
+                    self.js_context.register_global_property(key, slider.value, Attribute::all()).ok();
                 }
-
-                // チェックボックスの再構築
                 for checkbox in &self.checkboxes {
-                    new_checkboxes.push(CheckboxParam {
-                        name: checkbox.name.clone(),
-                        label: checkbox.label.clone(),
-                        value: checkbox.value,
-                    });
+                    let key = js_string!(checkbox.name.as_str());
+                    println!("{:?} {}",key,checkbox.value);
+                    self.js_context.register_global_property(key, checkbox.value, Attribute::all()).ok();
                 }
-
-                // カラーピッカーの再構築
                 for picker in &self.color_pickers {
-                    new_color_pickers.push(ColorPickerParam {
-                        name: picker.name.clone(),
-                        value: picker.value,
-                    });
+                    let key = js_string!(picker.name.as_str());
+                    // Array(3)をグローバルから作成
+                    let global = self.js_context.global_object();
+                    let array_ctor = global.get(js_string!("Array"), &mut self.js_context).unwrap();
+                    let array_constructor = array_ctor.as_constructor().expect("Array is not a constructor");
+                    let arr = array_constructor.construct(&[JsValue::from(3)], None, &mut self.js_context).unwrap();
+                    // 配列に色の値をセット
+                    for (i, &v) in [picker.value.r(), picker.value.g(), picker.value.b()].iter().enumerate() {
+                        let index = i as i32; // Using i32 which implements Into<PropertyKey>
+                        let val = JsValue::from(v as u32);
+                        arr.set(index, val, false, &mut self.js_context).ok(); // Added 'false' for throw parameter
+                    }
+                    self.js_context.register_global_property(key, arr, Attribute::all()).ok();
                 }
 
-                // グラフ線の再構築
-                for (name, points, color, weight) in self.graph_lines.borrow().iter() {
-                    new_graph_lines.push((name.clone(), points.clone(), *color, *weight));
+                self.graph_lines.borrow_mut().clear();
+                self.vectors.borrow_mut().clear();
+                if let Err(e) = self.js_context.eval(Source::from_bytes("try {draw();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}")) {
+                    js_error = Some(format!("Draw error: {:?}", e));
+                    return;
                 }
+                // // Rust側の状態からJS側の状態を再構築
+                // let mut new_sliders = Vec::new();
+                // let mut new_checkboxes = Vec::new();
+                // let mut new_color_pickers = Vec::new();
+                // let mut new_graph_lines = Vec::new();
+                // let mut new_vectors = Vec::new();
 
-                // ベクトルの再構築
-                for (name, origins_vec, tips_vec, color, weight) in self.vectors.borrow().iter() {
-                    new_vectors.push((name.clone(), origins_vec.clone(), tips_vec.clone(), *color, *weight));
-                }
+                // // スライダーの再構築
+                // for slider in &self.sliders {
+                //     new_sliders.push(SliderParam {
+                //         name: slider.name.clone(),
+                //         min: slider.min,
+                //         max: slider.max,
+                //         step: slider.step,
+                //         value: slider.value,
+                //     });
+                // }
 
-                // 新しい状態を適用
-                self.sliders = new_sliders;
-                self.checkboxes = new_checkboxes;
-                self.color_pickers = new_color_pickers;
-                self.graph_lines = Rc::new(RefCell::new(new_graph_lines));
-                self.vectors = Rc::new(RefCell::new(new_vectors));
+                // // チェックボックスの再構築
+                // for checkbox in &self.checkboxes {
+                //     new_checkboxes.push(CheckboxParam {
+                //         name: checkbox.name.clone(),
+                //         label: checkbox.label.clone(),
+                //         value: checkbox.value,
+                //     });
+                // }
+
+                // // カラーピッカーの再構築
+                // for picker in &self.color_pickers {
+                //     new_color_pickers.push(ColorPickerParam {
+                //         name: picker.name.clone(),
+                //         value: picker.value,
+                //     });
+                // }
+
+                // // グラフ線の再構築
+                // for (name, points, color, weight) in self.graph_lines.borrow().iter() {
+                //     new_graph_lines.push((name.clone(), points.clone(), *color, *weight));
+                // }
+
+                // // ベクトルの再構築
+                // for (name, origins_vec, tips_vec, color, weight) in self.vectors.borrow().iter() {
+                //     new_vectors.push((name.clone(), origins_vec.clone(), tips_vec.clone(), *color, *weight));
+                // }
+
+                // // 新しい状態を適用
+                // self.sliders = new_sliders;
+                // self.checkboxes = new_checkboxes;
+                // self.color_pickers = new_color_pickers;
+                // self.graph_lines = Rc::new(RefCell::new(new_graph_lines));
+                // self.vectors = Rc::new(RefCell::new(new_vectors));
+                
             }
         });
     }
