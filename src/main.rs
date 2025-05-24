@@ -103,6 +103,19 @@ impl App for ParametricPlotApp {
             self.js_context.with(|js_ctx| {
                 // 最初の実行時にのみJavaScript関数を定義
                 if !self.js_code_evaluated {
+                    let log_func = Func::from(|args: Vec<rquickjs::Value>| {
+                        let joined = args.iter().map(|v| format!("{:#?}", v)).collect::<Vec<_>>().join(" ");
+                        println!("[console.log]\n{}", joined);
+                    });
+                    let error_func = Func::from(|args: Vec<rquickjs::Value>| {
+                        let joined = args.iter().map(|v| format!("{:#?}", v)).collect::<Vec<_>>().join(" ");
+                        eprintln!("[console.error]\n{}", joined);
+                    });
+                    let console = rquickjs::Object::new(js_ctx.clone()).unwrap();
+                    console.set("log", log_func).unwrap();
+                    console.set("error", error_func).unwrap();
+                    js_ctx.globals().set("console", console).unwrap();
+
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
@@ -181,6 +194,7 @@ impl App for ParametricPlotApp {
                             addSlider("k", { min: 1, max: 20, step: 1, default: 9 });          // 薔薇曲線のローブ数
                             addSlider("r", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 薔薇曲線の大きさ
                             addSlider("n", { min: 0, max: 5, step: 0.01, default: 1 });        // ベクトルの位置
+                            console.log(["a"]);
                         }
                         function draw() {
                             // 円 (a,bで縦横比を制御)
