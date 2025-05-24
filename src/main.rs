@@ -52,50 +52,21 @@ impl Default for ParametricPlotApp {
         let runtime = Runtime::new().unwrap();
         let js_context = JsContext::full(&runtime).unwrap();
         let default_js_code = r#"
-// 円と薔薇曲線を描画する関数を定義
 function setup() {
-    // パラメータをスライダーで定義
-    addSlider('a', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
-    addSlider('b', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
-    addSlider('k', { min: 1, max: 20, step: 1, default: 9 });
-    addSlider('r', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
-    addSlider('n', { min: 0, max: 5, step: 0.01, default: 1 });
-    addCheckbox('show', '薔薇曲線を表示する', { default: true });
-    addColorpicker('ellipseColor', { default: [255, 165, 0] }); // 楕円の色 (RGB)
-    addColorpicker('roseColor', { default: [0, 255, 0] });     // 薔薇曲線の色
+    addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
+    addColorpicker('lineColor', { default: [255, 0, 0] });
+    addCheckbox('show', '円を表示する', { default: true });
 }
 function draw() {
-    addParametricGraph(
-        '放物線',
-        function(t) { return [t, t**2]; },
-        { min: -1, max: 1, num_points: 1000 },
-        { color: Color,weight: 2.0 }
-    );
-    // 楕円をオレンジ色、太さ2.0で描画
-    addParametricGraph(
-        `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
-        function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
-        { min: 0, max: 2 * Math.PI, num_points: 1000 },
-        { color: ellipseColor, weight: 2.0 } 
-    );
     if (show) {
-        // 薔薇曲線を緑色、太さ1.0で描画
         addParametricGraph(
-            `薔薇曲線 (k=${k}, r=${r.toFixed(1)})`,
-            function(t) {
-                let radius = r * Math.cos(k * t);
-                return [radius * Math.cos(t), radius * Math.sin(t)];
-            },
-            { min: 0, max: 2 * Math.PI, num_points: 1000 },
-            { color: roseColor, weight: 1.0 }
+            '円',
+            function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
+            { min: 0, max: 2 * Math.PI, num_points: 100 },
+            { color: lineColor, weight: 2.0 }
         );
     }
-    let t = (n) * 2 * Math.PI;
-    let start = function(t) { return [a * Math.cos(t), b * Math.sin(t)]; };
-    let tangent = function(t) { return [-a * Math.sin(t), b * Math.cos(t)]; };
-    addVector(`接線${n}`, start, tangent, t, { color: [0, 0, 255], weight: 2.5 }); // 接線を青色、太さ2.5で描画
 }
-
 "#.to_string();
         Self {
             sliders: Vec::new(),
