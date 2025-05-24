@@ -54,19 +54,21 @@ impl Default for ParametricPlotApp {
         let default_js_code = r#"
 function setup() {
     stdout("hello world")
+    addSlider('a', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
+    addSlider('b', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
+    addSlider('r', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
     addCheckbox('show', '円を表示する', { default: true });
 }
 function draw() {
-    if (show) {
-        addParametricGraph(
-            '円',
-            function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
-            { min: 0, max: 2 * Math.PI, num_points: 100 },
-            { color: lineColor, weight: 2.0 }
-        );
-    }
+    console.log('Radius value:', radius); // デバッグ用にradiusの値を出力
+    addParametricGraph(
+        `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
+        function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
+        { min: 0, max: 2 * Math.PI, num_points: 1000 },
+        { color: lineColor, weight: 2.0 }
+    );
 }
 "#.to_string();
         Self {
@@ -148,6 +150,7 @@ impl App for ParametricPlotApp {
             // プロット描画
             plot.show(ui, |plot_ui| {
                 // 通常の曲線を描画
+                // println!("{:?}",self.graph_lines.borrow());
                 for (name, points, color, weight) in self.graph_lines.borrow().iter() {
                     let line = Line::new(name, PlotPoints::new(points.clone()))
                         .color(*color)
@@ -378,11 +381,11 @@ impl App for ParametricPlotApp {
                     let f = args.get_or_undefined(1).as_object()
                         .ok_or_else(|| boa_engine::JsNativeError::typ().with_message("Second argument must be a function"))?;
                     let range = args.get_or_undefined(2).to_object(context)?;
-                    let style = args.get_or_undefined(3).to_object(context)?;
-                    let min: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("min")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
+                    let style = args.get_or_undefined(3).to_object(context)?;                    let min: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("min")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
                     let max: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("max")), context).and_then(|v| v.to_number(context)).unwrap_or(2.0 * std::f64::consts::PI);
                     let num_points: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("num_points")), context).and_then(|v| v.to_number(context)).unwrap_or(500.0);
-                    let delta: f64 = range.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("delta")), context).and_then(|v| v.to_number(context)).unwrap_or((max - min) / num_points);
+                    // deltaは必ず計算する（rangeから取得しない）
+                    let delta: f64 = (max - min) / num_points;
                     const DEFAULT_GRAPH_COLOR: Color32 = Color32::from_rgb(200, 100, 0);
                     const DEFAULT_GRAPH_WEIGHT: f32 = 1.5;
                     let mut line_color = DEFAULT_GRAPH_COLOR;
@@ -402,10 +405,10 @@ impl App for ParametricPlotApp {
                     }
                     if let Ok(weight) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("weight")), context) {
                         line_weight = weight.to_number(context).unwrap_or(DEFAULT_GRAPH_WEIGHT as f64) as f32;
-                    }
-                    let mut points = Vec::new();
+                    }                    let mut points = Vec::with_capacity(num_points as usize);
                     let mut t = min;
-                    while t <= max {
+                    // 最後の点まで確実に生成するためのループ
+                    for _ in 0..=num_points as usize {
                         let args = [JsValue::from(t)];
                         if let Ok(result) = f.call(&JsValue::undefined(), &args, context) {
                             if let Some(obj) = result.as_object() {
