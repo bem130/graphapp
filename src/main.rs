@@ -1,7 +1,7 @@
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
-use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute};
+use boa_engine::{Context as BoaContext, Source, JsValue,JsResult, JsArgs, NativeFunction, js_string, property::Attribute};
 use colored::*;
 use egui_extras::syntax_highlighting;
 
@@ -51,6 +51,7 @@ impl Default for ParametricPlotApp {
         let js_context = BoaContext::default();
         let default_js_code = r#"
 function setup() {
+    stdout("hello world")
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
     addCheckbox('show', '円を表示する', { default: true });
@@ -495,6 +496,12 @@ impl App for ParametricPlotApp {
                     self.color_pickers.clear();
                     self.graph_lines.borrow_mut().clear();
                     self.vectors.borrow_mut().clear();
+
+                    // コードの読み込み
+                    println!("load");
+                    if let Err(e) = self.js_context.eval(Source::from_bytes(self.js_code.as_str())) {
+                        js_error = Some(format!("Load error: {:?}", e));
+                    }
 
                     // Setup関数の実行
                     println!("setup");
