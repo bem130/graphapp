@@ -65,6 +65,12 @@ function setup() {
     addColorpicker('roseColor', { default: [0, 255, 0] });     // 薔薇曲線の色
 }
 function draw() {
+    addParametricGraph(
+        '放物線',
+        function(t) { return [t, t**2]; },
+        { min: -1, max: 1, num_points: 1000 },
+        { color: Color,weight: 2.0 }
+    );
     // 楕円をオレンジ色、太さ2.0で描画
     addParametricGraph(
         `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
