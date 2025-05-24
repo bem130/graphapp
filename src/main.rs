@@ -340,7 +340,13 @@ fn main() -> eframe::Result<()> {
                 "NotoSerifJP".to_owned(),
                 egui::FontData::from_static(include_bytes!("fonts/NotoSerifJP-VariableFont_wght.ttf")).into(),
             );
-            // プロポーショナルファミリーの先頭にNotoSerifJPを追加
+            fonts.font_data.insert(
+                "MPLUS1Code".to_owned(),
+                egui::FontData::from_static(include_bytes!("fonts/MPLUS1Code-VariableFont_wght.ttf")).into(),
+            );
+            if let Some(mono) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                mono.insert(0, "MPLUS1Code".to_owned());
+            }
             if let Some(prop) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
                 prop.insert(0, "NotoSerifJP".to_owned());
             }
