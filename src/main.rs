@@ -194,7 +194,7 @@ impl App for ParametricPlotApp {
                             addSlider("k", { min: 1, max: 20, step: 1, default: 9 });          // 薔薇曲線のローブ数
                             addSlider("r", { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });  // 薔薇曲線の大きさ
                             addSlider("n", { min: 0, max: 5, step: 0.01, default: 1 });        // ベクトルの位置
-                            console.log(["a"]);
+                            console.log(["a",a]);
                         }
                         function draw() {
                             // 円 (a,bで縦横比を制御)
@@ -229,6 +229,7 @@ impl App for ParametricPlotApp {
                                 tangent,
                                 t
                             );
+                            console.log(["a",z]);
                         }
                     "#;
 
@@ -240,7 +241,7 @@ impl App for ParametricPlotApp {
                     // スライダーの初期化
                     let setup_exists = js_ctx.eval::<bool, _>("typeof setup === 'function'").unwrap_or(false);
                     if setup_exists {
-                        if let Err(e) = js_ctx.eval::<(), _>("setup();") {
+                        if let Err(e) = js_ctx.eval::<(), _>("try {setup();} catch (e) {console.error([e]);}") {
                             js_error = Some(format!("setup() error: {e:?}"));
                             return;
                         }
@@ -266,7 +267,7 @@ impl App for ParametricPlotApp {
                     self.vectors.borrow_mut().clear();  // ベクトルデータのクリア
 
                     // draw関数実行
-                    if let Err(e) = js_ctx.eval::<(), _>("draw();") {
+                    if let Err(e) = js_ctx.eval::<(), _>("try {draw();} catch (e) {console.error([e]);}") {
                         js_error = Some(format!("draw() error: {}", e));
                         return;
                     }
