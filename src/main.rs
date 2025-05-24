@@ -1,8 +1,7 @@
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
-use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
-use rquickjs::function::Func;
+use boa_engine::{Context as BoaContext, Source, JsResult, JsValue, JsArgs, NativeFunction, Context};
 use colored::*;
 use egui_extras::syntax_highlighting;
 
@@ -39,7 +38,7 @@ struct ParametricPlotApp {
     sliders: Vec<SliderParam>,
     checkboxes: Vec<CheckboxParam>, // チェックボックス一覧を追加
     color_pickers: Vec<ColorPickerParam>, // カラーピッカー一覧を追加
-    js_context: JsContext,
+    js_context: BoaContext,
     js_code_evaluated: bool,
     graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Color32, f32)>>>, // (名前, 点群, 色, 太さ)
     vectors: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Vec<[f64; 2]>, Color32, f32)>>>,  // (名前, 始点群, 終点群, 色, 太さ)
@@ -49,8 +48,7 @@ struct ParametricPlotApp {
 
 impl Default for ParametricPlotApp {
     fn default() -> Self {
-        let runtime = Runtime::new().unwrap();
-        let js_context = JsContext::full(&runtime).unwrap();
+        let mut js_context = BoaContext::default();
         let default_js_code = r#"
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
@@ -258,20 +256,26 @@ impl App for ParametricPlotApp {
             }
 
             // --- JavaScript関連の処理 ---
-            self.js_context.with(|js_ctx| {
-                // JSコードが変更された場合は再評価
-                if js_code_changed || !self.js_code_evaluated || self.js_code != self.last_js_code {
-                    self.js_code_evaluated = false;
-                    self.last_js_code = self.js_code.clone();
-                    // Rust側stdout/stderrをJSに提供
-                    let stdout = Func::from(|content: String| {
-                        println!("{}", content);
-                    });
-                    js_ctx.globals().set("stdout", stdout).unwrap();
-                    let stderr = Func::from(|content: String| {
-                        eprintln!("{}", content.red());
-                    });
-                    js_ctx.globals().set("stderr", stderr).unwrap();
+            // JSコードが変更された場合は再評価
+            if js_code_changed || !self.js_code_evaluated || self.js_code != self.last_js_code {
+                self.js_code_evaluated = false;
+                self.last_js_code = self.js_code.clone();
+                // Rust側stdout/stderrをJSに提供
+                let stdout = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let content = args.get_or_undefined(0).to_string(context)?;
+                    println!("{}", format!("{:?}",content));
+                    Ok(JsValue::undefined())
+                };
+                self.js_context.register_global_builtin_callable("stdout".into(), 1, NativeFunction::from_copy_closure(stdout)).unwrap();
+
+                // stderr
+                let stderr = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                    let content = args.get_or_undefined(0).to_string(context)?;
+                    eprintln!("{}", format!("{:?}",content).red());
+                    Ok(JsValue::undefined())
+                };
+                self.js_context.register_global_builtin_callable("stderr".into(), 1, NativeFunction::from_copy_closure(stderr)).unwrap();
+
                     // JS側でconsole.log/console.errorをstdout/stderr経由でJSON出力するように定義
                     let console_js = r#"
                         try {
@@ -286,9 +290,8 @@ impl App for ParametricPlotApp {
                             };
                         } catch(e) { stderr('[console patch error] ' + e); }
                     "#;
-                    if let Err(e) = js_ctx.eval::<(), _>(console_js) {
-                        eprintln!("[console patch error] {e:?}");
-                    }
+                    self.js_context.eval(Source::from_bytes(console_js));
+
                     let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                     let sliders_api = sliders_rc.clone();
                     let checkboxes_rc = Rc::new(RefCell::new(Vec::new()));
@@ -508,7 +511,6 @@ impl App for ParametricPlotApp {
                     });
                 println!("JSエラー: {}", err);
             }
-        });
     }
 }
 
