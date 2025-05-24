@@ -1,7 +1,7 @@
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
-use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, property::PropertyKey};
+use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute};
 use colored::*;
 use egui_extras::syntax_highlighting;
 
@@ -48,7 +48,7 @@ struct ParametricPlotApp {
 
 impl Default for ParametricPlotApp {
     fn default() -> Self {
-        let mut js_context = BoaContext::default();
+        let js_context = BoaContext::default();
         let default_js_code = r#"
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
@@ -423,65 +423,72 @@ impl App for ParametricPlotApp {
                 };
                 unsafe { self.js_context.register_global_builtin_callable("addParametricGraph".into(), 4, NativeFunction::from_closure(add_parametric_graph)).unwrap(); }
 
-                // addVector API
+                // addVector API (api.md仕様)
                 let add_vector = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
                     let name = args.get_or_undefined(0).to_string(context)?;
-                    let origins = args.get_or_undefined(1).to_object(context)?;
-                    let tips = args.get_or_undefined(2).to_object(context)?;
-                    let style = args.get_or_undefined(3).to_object(context)?;
-                    let mut color = Color32::from_rgb(0, 0, 255);
-                    let mut weight = 1.0;
+                    let start_func = args.get_or_undefined(1).as_object()
+                        .ok_or_else(|| boa_engine::JsNativeError::typ().with_message("Second argument must be a function"))?;
+                    let vec_func = args.get_or_undefined(2).as_object()
+                        .ok_or_else(|| boa_engine::JsNativeError::typ().with_message("Third argument must be a function"))?;
+                    let t = args.get_or_undefined(3).to_number(context)?;
+                    let style = args.get_or_undefined(4).to_object(context)?;
+                    // デフォルト色・太さ
+                    let mut color = Color32::from_rgb(0, 150, 200);
+                    let mut weight = 1.5;
                     if let Ok(js_val) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("color")), context) {
                         if let Some(obj) = js_val.as_object() {
                             if obj.is_array() {
                                 let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
                                 if len >= 3 {
                                     let r = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0) as u8;
-                                    let g = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0) as u8;
-                                    let b = obj.get(2, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(255.0) as u8;
+                                    let g = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(150.0) as u8;
+                                    let b = obj.get(2, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(200.0) as u8;
                                     color = Color32::from_rgb(r, g, b);
                                 }
                             }
                         }
                     }
                     if let Ok(weight_val) = style.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("weight")), context) {
-                        weight = weight_val.to_number(context).unwrap_or(1.0) as f32;
+                        weight = weight_val.to_number(context).unwrap_or(1.5) as f32;
                     }
+                    // tで関数を呼び出し
+                    let args_t = [JsValue::from(t)];
+                    let start = if let Ok(result) = start_func.call(&JsValue::undefined(), &args_t, context) {
+                        if let Some(obj) = result.as_object() {
+                            if obj.is_array() {
+                                let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                                if len >= 2 {
+                                    let x = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                    let y = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                    Some([x, y])
+                                } else { None }
+                            } else { None }
+                        } else { None }
+                    } else { None };
+                    let vec = if let Ok(result) = vec_func.call(&JsValue::undefined(), &args_t, context) {
+                        if let Some(obj) = result.as_object() {
+                            if obj.is_array() {
+                                let len = obj.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
+                                if len >= 2 {
+                                    let dx = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                    let dy = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
+                                    Some([dx, dy])
+                                } else { None }
+                            } else { None }
+                        } else { None }
+                    } else { None };
                     let mut origins_vec = Vec::new();
                     let mut tips_vec = Vec::new();
-                    if origins.is_array() {
-                        let len = origins.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
-                        for i in 0..len {
-                            if let Ok(val) = origins.get(i, context) {
-                                if let Some(obj) = val.as_object() {
-                                    if obj.is_array() {
-                                        let x = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
-                                        let y = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
-                                        origins_vec.push([x, y]);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if tips.is_array() {
-                        let len = tips.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("length")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0) as usize;
-                        for i in 0..len {
-                            if let Ok(val) = tips.get(i, context) {
-                                if let Some(obj) = val.as_object() {
-                                    if obj.is_array() {
-                                        let x = obj.get(0, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
-                                        let y = obj.get(1, context).unwrap_or(JsValue::undefined()).to_number(context).unwrap_or(0.0);
-                                        tips_vec.push([x, y]);
-                                    }
-                                }
-                            }
-                        }
+                    if let (Some(start), Some(vec)) = (start, vec) {
+                        origins_vec.push(start);
+                        tips_vec.push([start[0] + vec[0], start[1] + vec[1]]);
                     }
                     vectors_api.borrow_mut().push((format!("{:?}", name), origins_vec, tips_vec, color, weight));
                     Ok(JsValue::undefined())
                 };
-                unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 4, NativeFunction::from_closure(add_vector)).unwrap(); }
+                unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 5, NativeFunction::from_closure(add_vector)).unwrap(); }
 
+                // --- setup()実行後にUI値をグローバル変数として注入しdraw()を呼ぶ ---
                 if js_code_changed || !self.js_code_evaluated {
                     self.sliders.clear();
                     self.checkboxes.clear();
@@ -490,11 +497,38 @@ impl App for ParametricPlotApp {
                     self.vectors.borrow_mut().clear();
 
                     // Setup関数の実行
+                    println!("setup");
                     if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof setup === 'function') setup();")) {
                         js_error = Some(format!("Setup error: {:?}", e));
                     }
 
+                    // UI値をグローバル変数として注入
+                    for slider in &self.sliders {
+                        let key = js_string!(slider.name.as_str());
+                        self.js_context.register_global_property(key, slider.value, Attribute::all()).ok();
+                    }
+                    for checkbox in &self.checkboxes {
+                        let key = js_string!(checkbox.name.as_str());
+                        self.js_context.register_global_property(key, checkbox.value, Attribute::all()).ok();
+                    }
+                    for picker in &self.color_pickers {
+                        let key = js_string!(picker.name.as_str());
+                        // Array(3)をグローバルから作成
+                        let global = self.js_context.global_object();
+                        let array_ctor = global.get(js_string!("Array"), &mut self.js_context).unwrap();
+                        let array_constructor = array_ctor.as_constructor().expect("Array is not a constructor");
+                        let arr = array_constructor.construct(&[JsValue::from(3)], None, &mut self.js_context).unwrap();
+                        // 配列に色の値をセット
+                        for (i, &v) in [picker.value.r(), picker.value.g(), picker.value.b()].iter().enumerate() {
+                            let index = i as i32; // Using i32 which implements Into<PropertyKey>
+                            let val = JsValue::from(v as u32);
+                            arr.set(index, val, false, &mut self.js_context).ok(); // Added 'false' for throw parameter
+                        }
+                        self.js_context.register_global_property(key, arr, Attribute::all()).ok();
+                    }
+
                     // Draw関数の実行
+                    println!("draw");
                     if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof draw === 'function') draw();")) {
                         js_error = Some(format!("Draw error: {:?}", e));
                     }
