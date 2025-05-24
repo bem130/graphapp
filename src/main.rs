@@ -1,7 +1,9 @@
+use boa_engine::object::Object;
+use boa_engine::JsObject;
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
-use boa_engine::{Context as BoaContext, Source, JsValue,JsResult, JsArgs, NativeFunction, js_string, property::Attribute};
+use boa_engine::{Context as BoaContext, Source, JsValue,JsResult, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
 use colored::*;
 use egui_extras::syntax_highlighting;
 
@@ -264,7 +266,7 @@ impl App for ParametricPlotApp {
                 // Rust側stdout/stderrをJSに提供
                 let stdout = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
                     let content = args.get_or_undefined(0).to_string(context)?;
-                    println!("{}", format!("{:?}",content));
+                    println!("{}", content.to_std_string().unwrap());
                     Ok(JsValue::undefined())
                 };
                 self.js_context.register_global_builtin_callable("stdout".into(), 1, NativeFunction::from_copy_closure(stdout)).unwrap();
@@ -272,7 +274,7 @@ impl App for ParametricPlotApp {
                 // stderr
                 let stderr = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
                     let content = args.get_or_undefined(0).to_string(context)?;
-                    eprintln!("{}", format!("{:?}",content).red());
+                    eprintln!("{}", content.to_std_string().unwrap().red());
                     Ok(JsValue::undefined())
                 };
                 self.js_context.register_global_builtin_callable("stderr".into(), 1, NativeFunction::from_copy_closure(stderr)).unwrap();
@@ -313,7 +315,7 @@ impl App for ParametricPlotApp {
                     let default = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("default")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
                     
                     sliders_api.borrow_mut().push(SliderParam {
-                        name: format!("{:?}", name),
+                        name: name.to_std_string().unwrap(),
                         min,
                         max,
                         step,
@@ -335,10 +337,9 @@ impl App for ParametricPlotApp {
                         true
                     };
 
-                    println!("checkbox {:?}",name);
                     checkboxes_api.borrow_mut().push(CheckboxParam {
-                        name: format!("{:?}", name),
-                        label: format!("{:?}", label),
+                        name: name.to_std_string().unwrap(),
+                        label: label.to_std_string().unwrap(),
                         value: default,
                     });
                     Ok(JsValue::undefined())
@@ -364,7 +365,7 @@ impl App for ParametricPlotApp {
                         }
                     }
                     color_pickers_api.borrow_mut().push(ColorPickerParam {
-                        name: format!("{:?}", name),
+                        name: name.to_std_string().unwrap(),
                         value: default_color_val,
                     });
                     Ok(JsValue::undefined())
@@ -420,7 +421,7 @@ impl App for ParametricPlotApp {
                         }
                         t += delta;
                     }
-                    graph_lines_api.borrow_mut().push((format!("{:?}", name), points, line_color, line_weight));
+                    graph_lines_api.borrow_mut().push((name.to_std_string().unwrap(), points, line_color, line_weight));
                     Ok(JsValue::undefined())
                 };
                 unsafe { self.js_context.register_global_builtin_callable("addParametricGraph".into(), 4, NativeFunction::from_closure(add_parametric_graph)).unwrap(); }
@@ -485,7 +486,7 @@ impl App for ParametricPlotApp {
                         origins_vec.push(start);
                         tips_vec.push([start[0] + vec[0], start[1] + vec[1]]);
                     }
-                    vectors_api.borrow_mut().push((format!("{:?}", name), origins_vec, tips_vec, color, weight));
+                    vectors_api.borrow_mut().push((name.to_std_string().unwrap(), origins_vec, tips_vec, color, weight));
                     Ok(JsValue::undefined())
                 };
                 unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 5, NativeFunction::from_closure(add_vector)).unwrap(); }
@@ -530,16 +531,12 @@ impl App for ParametricPlotApp {
             if need_redraw || self.graph_lines.borrow().is_empty() {
                 // UI値をグローバル変数として注入
                 for slider in &self.sliders {
-                    let key = js_string!(slider.name.as_str());
-                    self.js_context.register_global_property(key, slider.value, Attribute::all()).ok();
+                    self.js_context.register_global_property::<PropertyKey, f64>(js_string!(slider.name.clone()).into(), slider.value, Attribute::all()).ok();
                 }
                 for checkbox in &self.checkboxes {
-                    let key = js_string!(checkbox.name.as_str());
-                    println!("{:?} {}",key,checkbox.value);
-                    self.js_context.register_global_property(key, checkbox.value, Attribute::all()).ok();
+                    self.js_context.register_global_property::<PropertyKey, bool>(js_string!(checkbox.name.clone()).into(), checkbox.value, Attribute::all()).ok();
                 }
                 for picker in &self.color_pickers {
-                    let key = js_string!(picker.name.as_str());
                     // Array(3)をグローバルから作成
                     let global = self.js_context.global_object();
                     let array_ctor = global.get(js_string!("Array"), &mut self.js_context).unwrap();
@@ -551,7 +548,7 @@ impl App for ParametricPlotApp {
                         let val = JsValue::from(v as u32);
                         arr.set(index, val, false, &mut self.js_context).ok(); // Added 'false' for throw parameter
                     }
-                    self.js_context.register_global_property(key, arr, Attribute::all()).ok();
+                    self.js_context.register_global_property::<PropertyKey, JsObject>(js_string!(picker.name.clone()).into(), arr, Attribute::all()).ok();
                 }
 
                 self.graph_lines.borrow_mut().clear();
