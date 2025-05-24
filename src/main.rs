@@ -1,5 +1,5 @@
 use eframe::{egui, App, Frame};
-use egui_plot::{Line, Plot, PlotPoints, Arrows};
+use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
 use rquickjs::{Runtime, Context as JsContext, Result as JsResult};
 use rquickjs::function::Func;
@@ -27,10 +27,18 @@ struct CheckboxParam {
     value: bool,    // 現在値
 }
 
+// カラーピッカー情報を保持する構造体
+#[derive(Clone)]
+struct ColorPickerParam {
+    name: String,   // JSで参照する変数名
+    value: Color32, // 現在の色 (egui::Color32)
+}
+
 // アプリケーションの状態を保持する構造体
 struct ParametricPlotApp {
     sliders: Vec<SliderParam>,
     checkboxes: Vec<CheckboxParam>, // チェックボックス一覧を追加
+    color_pickers: Vec<ColorPickerParam>, // カラーピッカー一覧を追加
     js_context: JsContext,
     js_code_evaluated: bool,
     graph_lines: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Color32, f32)>>>, // (名前, 点群, 色, 太さ)
@@ -53,6 +61,8 @@ function setup() {
     addSlider('r', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
     addSlider('n', { min: 0, max: 5, step: 0.01, default: 1 });
     addCheckbox('show', '薔薇曲線を表示する', { default: true });
+    addColorpicker('ellipseColor', { default: [255, 165, 0] }); // 楕円の色 (RGB)
+    addColorpicker('roseColor', { default: [0, 255, 0] });     // 薔薇曲線の色
 }
 function draw() {
     // 楕円をオレンジ色、太さ2.0で描画
@@ -60,7 +70,7 @@ function draw() {
         `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
         function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
         { min: 0, max: 2 * Math.PI, num_points: 1000 },
-        { color: [255, 165, 0], weight: 2.0 } 
+        { color: ellipseColor, weight: 2.0 } 
     );
     if (show) {
         // 薔薇曲線を緑色、太さ1.0で描画
@@ -71,7 +81,7 @@ function draw() {
                 return [radius * Math.cos(t), radius * Math.sin(t)];
             },
             { min: 0, max: 2 * Math.PI, num_points: 1000 },
-            { color: [0, 255, 0], weight: 1.0 }
+            { color: roseColor, weight: 1.0 }
         );
     }
     let t = (n) * 2 * Math.PI;
@@ -84,6 +94,7 @@ function draw() {
         Self {
             sliders: Vec::new(),
             checkboxes: Vec::new(),
+            color_pickers: Vec::new(),
             js_context,
             js_code_evaluated: false,
             graph_lines: Rc::new(RefCell::new(Vec::new())),
@@ -231,7 +242,7 @@ impl App for ParametricPlotApp {
             });
 
             // --- スライダー・チェックボックスを重ねて表示 ---
-            if !self.sliders.is_empty() || !self.checkboxes.is_empty() {
+            if !self.sliders.is_empty() || !self.checkboxes.is_empty() || !self.color_pickers.is_empty() {
                 // 左上にパラメータパネルを配置
                 egui::Window::new("パラメータ")
                     .resizable(false)
@@ -249,6 +260,22 @@ impl App for ParametricPlotApp {
                             if ui.checkbox(&mut checkbox.value, &checkbox.label).changed() {
                                 need_redraw = true;
                             }
+                        }
+                        for picker in &mut self.color_pickers {
+                            ui.horizontal(|ui| {
+                                ui.label(&picker.name);
+                                // Color32 (u8 0-255 per channel) を [f32; 3] (0.0-1.0 per channel) に変換
+                                let mut color_f32 = [
+                                    picker.value.r() as f32 / 255.0,
+                                    picker.value.g() as f32 / 255.0,
+                                    picker.value.b() as f32 / 255.0,
+                                ];
+                                if ui.color_edit_button_rgb(&mut color_f32).changed() {
+                                    // [f32; 3] から Color32 に戻す (アルファは常に255)
+                                    picker.value = Color32::from_rgb((color_f32[0] * 255.0) as u8, (color_f32[1] * 255.0) as u8, (color_f32[2] * 255.0) as u8);
+                                    need_redraw = true;
+                                }
+                            });
                         }
                     });
             }
@@ -289,6 +316,8 @@ impl App for ParametricPlotApp {
                     let sliders_api = sliders_rc.clone();
                     let checkboxes_rc = Rc::new(RefCell::new(Vec::new()));
                     let checkboxes_api = checkboxes_rc.clone();
+                    let color_pickers_rc = Rc::new(RefCell::new(Vec::new()));
+                    let color_pickers_api = color_pickers_rc.clone();
                     let graph_lines_api = self.graph_lines.clone();
                     let add_slider = Func::from(move |name: String, params: rquickjs::Object| {
                         let min: f64 = params.get("min").unwrap_or(0.0);
@@ -314,27 +343,48 @@ impl App for ParametricPlotApp {
                         });
                     });
                     js_ctx.globals().set("addCheckbox", add_checkbox).unwrap();
+                    // addColorpicker API
+                    let add_color_picker = Func::from(move |name: String, params: Option<rquickjs::Object>| {
+                        let mut default_color_val = Color32::from_rgb(255, 255, 255); // デフォルトは不透明の白
+                        if let Some(p_obj) = params {
+                            if let Ok(color_array) = p_obj.get::<_, rquickjs::Array>("default") {
+                                if color_array.len() >= 3 {
+                                    let r = color_array.get::<u8>(0).unwrap_or(255);
+                                    let g = color_array.get::<u8>(1).unwrap_or(255);
+                                    let b = color_array.get::<u8>(2).unwrap_or(255);
+                                    // アルファ値は無視し、常に不透明 (from_rgbがA=255とする)
+                                    default_color_val = Color32::from_rgb(r, g, b);
+                                }
+                            }
+                        }
+                        color_pickers_api.borrow_mut().push(ColorPickerParam {
+                            name: name.clone(),
+                            value: default_color_val,
+                        });
+                    });
+                    js_ctx.globals().set("addColorpicker", add_color_picker).unwrap();
                     let add_parametric_graph = Func::from(move |name: String, f: rquickjs::Function, range: rquickjs::Object, style: Option<rquickjs::Object>| -> JsResult<()> {
                         let min: f64 = range.get("min").unwrap_or(0.0);
                         let max: f64 = range.get("max").unwrap_or(2.0 * std::f64::consts::PI);
                         let delta: Option<f64> = range.get("delta").ok();
                         let mut points = Vec::new();
 
-                        let default_color = Color32::from_rgb(200, 100, 0);
-                        let default_weight = 1.5f32;
-                        let mut line_color = default_color;
-                        let mut line_weight = default_weight;
+                        const DEFAULT_GRAPH_COLOR: Color32 = Color32::from_rgb(200, 100, 0); // 不透明
+                        const DEFAULT_GRAPH_WEIGHT: f32 = 1.5;
+                        let mut line_color = DEFAULT_GRAPH_COLOR;
+                        let mut line_weight = DEFAULT_GRAPH_WEIGHT;
 
                         if let Some(style_obj) = style {
                             if let Ok(color_array) = style_obj.get::<_, rquickjs::Array>("color") {
                                 if color_array.len() >= 3 {
-                                    let r = color_array.get::<u8>(0).unwrap_or(default_color.r());
-                                    let g = color_array.get::<u8>(1).unwrap_or(default_color.g());
-                                    let b = color_array.get::<u8>(2).unwrap_or(default_color.b());
+                                    let r = color_array.get::<u8>(0).unwrap_or(DEFAULT_GRAPH_COLOR.r());
+                                    let g = color_array.get::<u8>(1).unwrap_or(DEFAULT_GRAPH_COLOR.g());
+                                    let b = color_array.get::<u8>(2).unwrap_or(DEFAULT_GRAPH_COLOR.b());
+                                    // アルファ値は無視し、常に不透明
                                     line_color = Color32::from_rgb(r, g, b);
                                 }
                             }
-                            line_weight = style_obj.get("weight").unwrap_or(default_weight);
+                            line_weight = style_obj.get("weight").unwrap_or(DEFAULT_GRAPH_WEIGHT);
                         }
 
                         if let Some(delta) = delta {
@@ -365,21 +415,22 @@ impl App for ParametricPlotApp {
                         let start: Vec<f64> = start_f.call((t,))?;
                         let vec: Vec<f64> = vec_f.call((t,))?;
 
-                        let default_color = Color32::from_rgb(0, 150, 200);
-                        let default_weight = 1.5f32;
-                        let mut arrow_color = default_color;
-                        let mut arrow_weight = default_weight;
+                        const DEFAULT_ARROW_COLOR: Color32 = Color32::from_rgb(0, 150, 200); // 不透明
+                        const DEFAULT_ARROW_WEIGHT: f32 = 1.5;
+                        let mut arrow_color = DEFAULT_ARROW_COLOR;
+                        let mut arrow_weight = DEFAULT_ARROW_WEIGHT;
 
                         if let Some(style_obj) = style {
                             if let Ok(color_array) = style_obj.get::<_, rquickjs::Array>("color") {
                                 if color_array.len() >= 3 {
-                                    let r = color_array.get::<u8>(0).unwrap_or(default_color.r());
-                                    let g = color_array.get::<u8>(1).unwrap_or(default_color.g());
-                                    let b = color_array.get::<u8>(2).unwrap_or(default_color.b());
+                                    let r = color_array.get::<u8>(0).unwrap_or(DEFAULT_ARROW_COLOR.r());
+                                    let g = color_array.get::<u8>(1).unwrap_or(DEFAULT_ARROW_COLOR.g());
+                                    let b = color_array.get::<u8>(2).unwrap_or(DEFAULT_ARROW_COLOR.b());
+                                    // アルファ値は無視し、常に不透明
                                     arrow_color = Color32::from_rgb(r, g, b);
                                 }
                             }
-                            arrow_weight = style_obj.get("weight").unwrap_or(default_weight);
+                            arrow_weight = style_obj.get("weight").unwrap_or(DEFAULT_ARROW_WEIGHT);
                         }
 
                         if start.len() == 2 && vec.len() == 2 {
@@ -411,6 +462,7 @@ impl App for ParametricPlotApp {
                         }
                         self.sliders = sliders_rc.borrow().clone();
                         self.checkboxes = checkboxes_rc.borrow().clone();  // チェックボックスの初期化
+                        self.color_pickers = color_pickers_rc.borrow().clone(); // カラーピッカーの初期化
                         need_redraw = true;
                     } else {
                         js_error = Some("setup関数が定義されていません".to_string());
@@ -428,6 +480,33 @@ impl App for ParametricPlotApp {
                     // チェックボックス値をJSグローバルに注入
                     for checkbox in &self.checkboxes {
                         js_ctx.globals().set(checkbox.name.as_str(), checkbox.value).unwrap();
+                    }
+                    // カラーピッカー値をJSグローバルに注入 ([r,g,b] の3要素配列として)
+                    for picker in &self.color_pickers {
+                        let js_array = match rquickjs::Array::new(js_ctx.clone()) {
+                            Ok(arr) => arr,
+                            Err(e) => {
+                                js_error = Some(format!("Failed to create JS array for color picker {}: {:?}", picker.name, e));
+                                return;
+                            }
+                        };
+                        if let Err(e) = js_array.set(0, picker.value.r()) {
+                            js_error = Some(format!("Failed to set R for color picker {}: {:?}", picker.name, e));
+                            return;
+                        }
+                        if let Err(e) = js_array.set(1, picker.value.g()) {
+                            js_error = Some(format!("Failed to set G for color picker {}: {:?}", picker.name, e));
+                            return;
+                        }
+                        if let Err(e) = js_array.set(2, picker.value.b()) {
+                            js_error = Some(format!("Failed to set B for color picker {}: {:?}", picker.name, e));
+                            return;
+                        }
+                        // アルファ値は注入しない
+                        if let Err(e) = js_ctx.globals().set(picker.name.as_str(), js_array) {
+                            js_error = Some(format!("Failed to set JS global for color picker {}: {:?}", picker.name, e));
+                            return;
+                        }
                     }
 
                     // グラフデータをクリア
