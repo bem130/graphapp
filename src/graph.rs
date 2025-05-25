@@ -49,6 +49,19 @@ struct ColorPickerParam {
     value: Color32, // 現在の色 (egui::Color32)
 }
 
+// ログメッセージの種類と内容
+#[derive(Clone, Debug, PartialEq)] // PartialEqを追加して比較できるようにする
+enum LogType {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Clone, Debug, PartialEq)] // PartialEqを追加
+struct LogEntry {
+    log_type: LogType,
+    message: String,
+}
+
 // アプリケーションの状態を保持する構造体
 pub struct ParametricPlotApp {
     sliders: Vec<SliderParam>,
@@ -61,6 +74,7 @@ pub struct ParametricPlotApp {
     js_code: String, // JavaScriptエディタ用
     last_js_code: String, // 前回実行したJSコード
     api_docs_content: String,
+    log_output: Rc<RefCell<Vec<LogEntry>>>,
     commonmark_cache: egui_commonmark::CommonMarkCache,
 }
 
@@ -95,6 +109,7 @@ function draw() {
             js_code: default_js_code.clone(),
             last_js_code: default_js_code,
             api_docs_content: include_str!("../doc/api.md").to_string(),
+            log_output: Rc::new(RefCell::new(Vec::new())),
             commonmark_cache: egui_commonmark::CommonMarkCache::default(),
         }
     }
@@ -154,6 +169,44 @@ impl App for ParametricPlotApp {
                 if ui.button("再実行").clicked() {
                     js_code_changed = true;
                 }
+                ui.separator(); // エディタとログの間に区切り線
+                ui.heading("出力");
+                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                    let logs = self.log_output.borrow();
+                    if logs.is_empty() {
+                        return;
+                    }
+
+                    let mut display_entries: Vec<(LogEntry, usize)> = Vec::new();
+                    if !logs.is_empty() {
+                        display_entries.push((logs[0].clone(), 1));
+                        for i in 1..logs.len() {
+                            let current_log = &logs[i];
+                            let last_display_entry = display_entries.last_mut().unwrap();
+                            // メッセージタイプと内容が同じ場合にカウントアップ
+                            if current_log.log_type == last_display_entry.0.log_type && current_log.message == last_display_entry.0.message {
+                                last_display_entry.1 += 1;
+                            } else {
+                                display_entries.push((current_log.clone(), 1));
+                            }
+                        }
+                    }
+
+                    for (entry, count) in display_entries.iter() {
+                        let mut text = egui::RichText::new(format!("[{}] {}  x{}",
+                            match entry.log_type {
+                                LogType::Stdout => "stdout",
+                                LogType::Stderr => "stderr",
+                            },
+                            entry.message,
+                            count
+                        ));
+                        if entry.log_type == LogType::Stderr {
+                            text = text.color(Color32::RED);
+                        }
+                        ui.label(if *count > 1 { text } else { text });
+                    }
+                });
             });
         });
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -293,24 +346,41 @@ impl App for ParametricPlotApp {
             if js_code_changed || !self.js_code_evaluated || self.js_code != self.last_js_code {
                 self.js_code_evaluated = false;
                 self.last_js_code = self.js_code.clone();
+
                 // Rust側stdout/stderrをJSに提供
-                let stdout = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                let log_output_stdout = self.log_output.clone();
+                let stdout = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
                     let content = args.get_or_undefined(0).to_string(context)?;
-                    println!("{}", content.to_std_string().unwrap());
+                    let msg = content.to_std_string().unwrap_or_else(|e| format!("[stdout conversion error: {:?}]", e));
+                    println!("[JS stdout]: {}", msg); // Keep original console log
+                    log_output_stdout.borrow_mut().push(LogEntry {
+                        log_type: LogType::Stdout,
+                        message: msg,
+                    });
                     Ok(JsValue::undefined())
                 };
-                self.js_context.register_global_builtin_callable("stdout".into(), 1, NativeFunction::from_copy_closure(stdout)).unwrap();
+                unsafe {
+                    self.js_context.register_global_builtin_callable("stdout".into(), 1, NativeFunction::from_closure(stdout)).unwrap();
+                }
 
                 // stderr
-                let stderr = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
+                let log_output_stderr = self.log_output.clone();
+                let stderr = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
                     let content = args.get_or_undefined(0).to_string(context)?;
+                    let msg = content.to_std_string().unwrap_or_else(|e| format!("[stderr conversion error: {:?}]", e));
                     #[cfg(not(target_arch = "wasm32"))]
-                    eprintln!("{}", content.to_std_string().unwrap().red());
+                    eprintln!("[JS stderr]: {}", msg.clone().red());
                     #[cfg(target_arch = "wasm32")]
-                    web_sys::console::error_1(&content.to_std_string().unwrap().into());
+                    web_sys::console::error_1(&msg.clone().into());
+                    log_output_stderr.borrow_mut().push(LogEntry {
+                        log_type: LogType::Stderr,
+                        message: msg,
+                    });
                     Ok(JsValue::undefined())
                 };
-                self.js_context.register_global_builtin_callable("stderr".into(), 1, NativeFunction::from_copy_closure(stderr)).unwrap();
+                unsafe {
+                    self.js_context.register_global_builtin_callable("stderr".into(), 1, NativeFunction::from_closure(stderr)).unwrap();
+                }
 
                 // JS側でconsole.log/console.errorをstdout/stderr経由でJSON出力するように定義
                 let console_js = r#"
@@ -319,10 +389,10 @@ impl App for ParametricPlotApp {
                             globalThis.console = {};
                         }
                         globalThis.console.log = function(...args) {
-                            try { stdout(JSON.stringify(args)); } catch(e) {}
+                            try { stdout(args.map(x=>JSON.stringify(x)).join(" ")); } catch(e) {}
                         };
                         globalThis.console.error = function(...args) {
-                            try { stderr(JSON.stringify(args)); } catch(e) {}
+                            try { stderr(args.map(x=>JSON.stringify(x)).join(" ")); } catch(e) {}
                         };
                     } catch(e) { stderr('[console patch error] ' + e); }
                 "#;
@@ -524,11 +594,8 @@ impl App for ParametricPlotApp {
                 };
                 unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 5, NativeFunction::from_closure(add_vector)).unwrap(); }
 
-                // self.sliders.clear();
-                // self.checkboxes.clear();
-                // self.color_pickers.clear();
-                // self.graph_lines.borrow_mut().clear();
-                // self.vectors.borrow_mut().clear();
+                // ログ出力をリセット
+                self.log_output.borrow_mut().clear();
 
                 // コードの読み込み
                 println!("load");
@@ -549,15 +616,6 @@ impl App for ParametricPlotApp {
                 need_redraw = true;
 
                 self.js_code_evaluated = true;
-
-
-                // // Draw関数の実行
-                // println!("draw");
-                // if let Err(e) = self.js_context.eval(Source::from_bytes("if (typeof draw === 'function') draw();")) {
-                //     js_error = Some(format!("Draw error: {:?}", e));
-                // }
-
-                // self.js_code_evaluated = true;
             }
 
             // グラフの再描画フラグ
@@ -575,12 +633,12 @@ impl App for ParametricPlotApp {
                     let array_ctor = global.get(js_string!("Array"), &mut self.js_context).unwrap();
                     let array_constructor = array_ctor.as_constructor().expect("Array is not a constructor");
                     let arr = array_constructor.construct(&[JsValue::from(3)], None, &mut self.js_context).unwrap();
-                    
+
                     // 配列に色の値をセット
                     arr.set(0, JsValue::from(picker.value.r() as u32), false, &mut self.js_context).ok();
                     arr.set(1, JsValue::from(picker.value.g() as u32), false, &mut self.js_context).ok();
                     arr.set(2, JsValue::from(picker.value.b() as u32), false, &mut self.js_context).ok();
-                    
+
                     // グローバル変数として設定
                     self.js_context.register_global_property::<PropertyKey, JsObject>(js_string!(picker.name.clone()).into(), arr, Attribute::all()).ok();
                 }
@@ -591,58 +649,6 @@ impl App for ParametricPlotApp {
                     js_error = Some(format!("Draw error: {:?}", e));
                     return;
                 }
-                // // Rust側の状態からJS側の状態を再構築
-                // let mut new_sliders = Vec::new();
-                // let mut new_checkboxes = Vec::new();
-                // let mut new_color_pickers = Vec::new();
-                // let mut new_graph_lines = Vec::new();
-                // let mut new_vectors = Vec::new();
-
-                // // スライダーの再構築
-                // for slider in &self.sliders {
-                //     new_sliders.push(SliderParam {
-                //         name: slider.name.clone(),
-                //         min: slider.min,
-                //         max: slider.max,
-                //         step: slider.step,
-                //         value: slider.value,
-                //     });
-                // }
-
-                // // チェックボックスの再構築
-                // for checkbox in &self.checkboxes {
-                //     new_checkboxes.push(CheckboxParam {
-                //         name: checkbox.name.clone(),
-                //         label: checkbox.label.clone(),
-                //         value: checkbox.value,
-                //     });
-                // }
-
-                // // カラーピッカーの再構築
-                // for picker in &self.color_pickers {
-                //     new_color_pickers.push(ColorPickerParam {
-                //         name: picker.name.clone(),
-                //         value: picker.value,
-                //     });
-                // }
-
-                // // グラフ線の再構築
-                // for (name, points, color, weight) in self.graph_lines.borrow().iter() {
-                //     new_graph_lines.push((name.clone(), points.clone(), *color, *weight));
-                // }
-
-                // // ベクトルの再構築
-                // for (name, origins_vec, tips_vec, color, weight) in self.vectors.borrow().iter() {
-                //     new_vectors.push((name.clone(), origins_vec.clone(), tips_vec.clone(), *color, *weight));
-                // }
-
-                // // 新しい状態を適用
-                // self.sliders = new_sliders;
-                // self.checkboxes = new_checkboxes;
-                // self.color_pickers = new_color_pickers;
-                // self.graph_lines = Rc::new(RefCell::new(new_graph_lines));
-                // self.vectors = Rc::new(RefCell::new(new_vectors));
-                
             }
         });
     }
