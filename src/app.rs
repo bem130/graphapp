@@ -1,3 +1,5 @@
+#![cfg(target_arch = "wasm32")]
+
 use hframe::Aware;
 use boa_engine::JsObject;
 use eframe::{egui, Frame};
@@ -6,6 +8,10 @@ use egui::Color32;
 use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
 use egui_commonmark;
 use egui_extras::syntax_highlighting;
+use wasm_bindgen::prelude::*;
+use std::sync::{Arc, Mutex};
+
+static PENDING_CONTENT: Mutex<Option<String>> = Mutex::new(None);
 
 const VIDEO: &str = r#"
 <script>
@@ -50,5 +56,13 @@ impl eframe::App for MyApp {
         hframe::HtmlWindow::new("editor").content(VIDEO).show(ctx);
 
         hframe::sync(ctx);
+    }
+}
+
+
+#[wasm_bindgen]
+pub fn update(data: &str) {
+    if let Ok(mut content) = PENDING_CONTENT.try_lock() {
+        *content = Some(data.to_string());
     }
 }

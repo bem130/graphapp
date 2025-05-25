@@ -44,11 +44,12 @@
     <canvas id="graph_canvas"></canvas>
     <div id="container" style="width:800px;height:600px;border:1px solid grey"></div>
     <script type="module">
-        import init, { start } from './pkg/graphapp.js';
+        import init, { start, update } from './pkg/graphapp.js';
         async function run() {
             await init();
             await start('graph_canvas');
         }
+        window.update = update;
         run();
     </script>
 </body>
@@ -65,6 +66,11 @@ const myEditor = monaco.editor.create(document.getElementById("container"), {
 	value,
 	language: "javascript",
 	automaticLayout: true,
+});
+myEditor.getModel().onDidChangeContent((event) => {
+  console.log('内容が変更されました。');
+  console.log('変更イベント:', event);
+  console.log('現在の内容:', myEditor.getValue());
 });
 
     });
