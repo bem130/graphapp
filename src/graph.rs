@@ -119,8 +119,6 @@ impl ParametricPlotApp {}
 
 impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
-        let mut js_error: Option<String> = None;
-        let mut need_redraw = false;
         let mut js_code_changed = false;
 
         // API Documentationウィンドウを常に表示
@@ -138,12 +136,15 @@ impl App for ParametricPlotApp {
             ui.heading("JavaScript エディタ");
             ui.label("グラフ描画用のJavaScriptコードを編集できます。");
             let mut theme = syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
-            ui.collapsing("Theme", |ui| {
-                ui.group(|ui| {
-                    theme.ui(ui);
-                    theme.clone().store_in_memory(ui.ctx());
-                });
-            });
+            // ui.collapsing("Theme", |ui| {
+            //     ui.group(|ui| {
+            //         theme.ui(ui);
+            //         theme.clone().store_in_memory(ui.ctx());
+            //     });
+            // });
+            if ui.button("再実行").clicked() {
+                js_code_changed = true;
+            }
             let mut layouter = |ui: &egui::Ui, buf: &str, wrap_width: f32| {
                 let mut layout_job = syntax_highlighting::highlight(
                     ui.ctx(),
@@ -155,58 +156,22 @@ impl App for ParametricPlotApp {
                 layout_job.wrap.max_width = wrap_width;
                 ui.fonts(|f| f.layout_job(layout_job))
             };
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let response = ui.add(
-                    egui::TextEdit::multiline(&mut self.js_code)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(2000.0) 
-                        .code_editor()
-                        .layouter(&mut layouter)
-                );
+            // ScrollAreaがSidePanelの残りのスペースを埋めるようにする
+            // auto_shrink([false, false]) で、利用可能なスペースいっぱいに広がる
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false]) // 水平・垂直ともに利用可能なスペースを埋める
+                .show(ui, |ui| { // このuiはScrollAreaのコンテンツ領域のui
+                    // TextEditをScrollAreaのコンテンツ領域いっぱいに広げる
+                    let text_edit_widget = egui::TextEdit::multiline(&mut self.js_code)
+                            .font(egui::TextStyle::Monospace)
+                            // .desired_width(f32::INFINITY) // add_sizedで幅も指定するため、ここでは必須ではない
+                            .code_editor()
+                            .layouter(&mut layouter);
+                    // TextEditウィジェットを、ScrollAreaの利用可能なサイズいっぱいに配置
+                    let response = ui.add_sized(ui.available_size(), text_edit_widget);
                 if response.changed() {
                     js_code_changed = true;
                 }
-                if ui.button("再実行").clicked() {
-                    js_code_changed = true;
-                }
-                ui.separator(); // エディタとログの間に区切り線
-                ui.heading("出力");
-                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                    let logs = self.log_output.borrow();
-                    if logs.is_empty() {
-                        return;
-                    }
-
-                    let mut display_entries: Vec<(LogEntry, usize)> = Vec::new();
-                    if !logs.is_empty() {
-                        display_entries.push((logs[0].clone(), 1));
-                        for i in 1..logs.len() {
-                            let current_log = &logs[i];
-                            let last_display_entry = display_entries.last_mut().unwrap();
-                            // メッセージタイプと内容が同じ場合にカウントアップ
-                            if current_log.log_type == last_display_entry.0.log_type && current_log.message == last_display_entry.0.message {
-                                last_display_entry.1 += 1;
-                            } else {
-                                display_entries.push((current_log.clone(), 1));
-                            }
-                        }
-                    }
-
-                    for (entry, count) in display_entries.iter() {
-                        let mut text = egui::RichText::new(format!("[{}] x{}\n{}",
-                            match entry.log_type {
-                                LogType::Stdout => "stdout",
-                                LogType::Stderr => "stderr",
-                            },
-                            count,
-                            entry.message,
-                        ));
-                        if entry.log_type == LogType::Stderr {
-                            text = text.color(Color32::RED);
-                        }
-                        ui.label(if *count > 1 { text } else { text });
-                    }
-                });
             });
         });
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -340,6 +305,49 @@ impl App for ParametricPlotApp {
                         }
                     });
             }
+
+            // --- ログ出力ウィンドウ ---
+            egui::Window::new("出力ログ")
+                .default_size([600.0, 200.0]) // デフォルトサイズを調整
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::both().auto_shrink([false,false]).max_height(300.0).show(ui, |ui| {
+                        let logs = self.log_output.borrow();
+                        if logs.is_empty() {
+                            ui.label("ログ出力はありません。");
+                            return;
+                        }
+
+                        let mut display_entries: Vec<(LogEntry, usize)> = Vec::new();
+                        if !logs.is_empty() {
+                            display_entries.push((logs[0].clone(), 1));
+                            for i in 1..logs.len() {
+                                let current_log = &logs[i];
+                                let last_display_entry = display_entries.last_mut().unwrap();
+                                // メッセージタイプと内容が同じ場合にカウントアップ
+                                if current_log.log_type == last_display_entry.0.log_type && current_log.message == last_display_entry.0.message {
+                                    last_display_entry.1 += 1;
+                                } else {
+                                    display_entries.push((current_log.clone(), 1));
+                                }
+                            }
+                        }
+
+                        for (entry, count) in display_entries.iter() {
+                            let mut text = egui::RichText::new(format!("[{}] x{}\n{}",
+                                match entry.log_type {
+                                    LogType::Stdout => "stdout",
+                                    LogType::Stderr => "stderr",
+                                },
+                                count,
+                                entry.message,
+                            ));
+                            if entry.log_type == LogType::Stderr {
+                                text = text.color(Color32::RED);
+                            }
+                            ui.label(text); // 常にRichTextを使用するように変更 (count > 1 の条件を削除)
+                        }});
+                });
 
             // --- JavaScript関連の処理 ---
             // JSコードが変更された場合は再評価
