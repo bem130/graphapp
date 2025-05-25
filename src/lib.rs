@@ -1,7 +1,8 @@
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-mod app;
+mod graph;
+// mod app;
 
 use eframe::egui;
 
@@ -47,7 +48,8 @@ pub async fn start(canvas_id: &str) -> Result<(), JsValue> {
                     prop.insert(0, "NotoSerifJP".to_owned());
                 }
                 cc.egui_ctx.set_fonts(fonts);
-                Ok(Box::new(app::MyApp::default()))
+                Ok(Box::new(graph::ParametricPlotApp::default()))
+                // Ok(Box::new(app::MyApp::default()))
             }),
         )
         .await?;

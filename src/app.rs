@@ -14,13 +14,7 @@ use std::sync::{Arc, Mutex};
 static PENDING_CONTENT: Mutex<Option<String>> = Mutex::new(None);
 
 const VIDEO: &str = r#"
-<script>
-
-console.log("hello world from hf")
-
-</script>
 "#;
-
 
 #[derive(Default)]
 pub struct MyApp {
@@ -52,10 +46,46 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        
+
 
         hframe::HtmlWindow::new("editor").content(VIDEO).show(ctx);
+                egui::Window::new("None")
+            .show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.label("Empty");
+                });
+            })
+            .aware();
 
+        egui::Window::new("Devtools")
+            .show(ctx, |ui| {
+                let video_toggle_text = if self.video_open {
+                    "Force close video"
+                } else {
+                    "Open video"
+                };
+                if ui.button(video_toggle_text).clicked() {
+                    self.video_open = !self.video_open;
+                }
+                ui.horizontal(|ui| {
+                    ui.label("Counter controls: ");
+                    if ui.button("+").clicked() {
+                        self.count += 1;
+                    }
+                    if ui.button("-").clicked() {
+                        self.count -= 1;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    egui::warn_if_debug_build(ui);
+                    egui::widgets::global_dark_light_mode_buttons(ui);
+                });
+            })
+            .aware();
+        
         hframe::sync(ctx);
+        
     }
 }
 

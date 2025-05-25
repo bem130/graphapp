@@ -1,3 +1,7 @@
+
+#[cfg(target_arch = "wasm32")]
+use hframe::Aware;
+
 use boa_engine::JsObject;
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
@@ -5,6 +9,15 @@ use egui::Color32;
 use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
 use egui_commonmark;
 use egui_extras::syntax_highlighting;
+
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use std::sync::{Arc, Mutex};
+#[cfg(target_arch = "wasm32")]
+static PENDING_CONTENT: Mutex<Option<String>> = Mutex::new(None);
+
 
 #[cfg(not(target_arch = "wasm32"))]
 use colored::Colorize;
@@ -132,16 +145,8 @@ impl App for ParametricPlotApp {
                 });
             });
 
-        egui::SidePanel::right("js_editor_panel").min_width(600.0).show(ctx, |ui| {
-            ui.heading("JavaScript エディタ");
-            ui.label("グラフ描画用のJavaScriptコードを編集できます。");
+        egui::Window::new("Javascript Editor").min_width(600.0).show(ctx, |ui| {
             let mut theme = syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
-            // ui.collapsing("Theme", |ui| {
-            //     ui.group(|ui| {
-            //         theme.ui(ui);
-            //         theme.clone().store_in_memory(ui.ctx());
-            //     });
-            // });
             if ui.button("再実行").clicked() {
                 js_code_changed = true;
             }
@@ -659,5 +664,22 @@ impl App for ParametricPlotApp {
                 }
             }
         });
+
+        #[cfg(target_arch = "wasm32")]
+        hframe::HtmlWindow::new("editor").content("hello").show(ctx);
+        #[cfg(target_arch = "wasm32")]
+        hframe::HtmlWindow::new("editor2").content("hello").show(ctx);
+        #[cfg(target_arch = "wasm32")]
+        hframe::sync(ctx);
+    }
+}
+
+
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn update(data: &str) {
+    if let Ok(mut content) = PENDING_CONTENT.try_lock() {
+        *content = Some(data.to_string());
     }
 }

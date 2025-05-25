@@ -68,9 +68,7 @@ const myEditor = monaco.editor.create(document.getElementById("container"), {
 	automaticLayout: true,
 });
 myEditor.getModel().onDidChangeContent((event) => {
-  console.log('内容が変更されました。');
-  console.log('変更イベント:', event);
-  console.log('現在の内容:', myEditor.getValue());
+    console.log('現在の内容:', myEditor.getValue());
 });
 
     });
@@ -78,6 +76,10 @@ myEditor.getModel().onDidChangeContent((event) => {
     function setup_editor() {
         let editor = document.querySelector("#container");
         let window = document.querySelector("#editor");
+        if (!window) {
+            window.setTimeout(setup_editor, 100);
+            return;
+        }
         window.appendChild(editor);
     }
     window.addEventListener("load", setup_editor);
