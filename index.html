@@ -20,6 +20,9 @@
     <meta name="twitter:description" content="インタラクティブなグラフをJavaScriptで描画・表示できるアプリケーションです。" />
     <meta name="twitter:image" content="https://bem130.github.io/graphapp/image.png" />
 
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.main.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/loader.min.js"></script>
+    
     <style>
         html, body {
             margin: 0;
@@ -39,6 +42,7 @@
 </head>
 <body>
     <canvas id="graph_canvas"></canvas>
+    <div id="container" style="width:800px;height:600px;border:1px solid grey"></div>
     <script type="module">
         import init, { start } from './pkg/graphapp.js';
         async function run() {
@@ -49,3 +53,26 @@
     </script>
 </body>
 </html>
+<script>
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs'} });
+    require(['vs/editor/editor.main'], function() {
+const value = /* set from `myEditor.getModel()`: */ `function hello() {
+	alert('Hello world!');
+}`;
+
+// Hover on each property to see its docs!
+const myEditor = monaco.editor.create(document.getElementById("container"), {
+	value,
+	language: "javascript",
+	automaticLayout: true,
+});
+
+    });
+    
+    function setup_editor() {
+        let editor = document.querySelector("#container");
+        let window = document.querySelector("#editor");
+        window.appendChild(editor);
+    }
+    window.addEventListener("load", setup_editor);
+</script>
