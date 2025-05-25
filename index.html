@@ -20,6 +20,9 @@
     <meta name="twitter:description" content="インタラクティブなグラフをJavaScriptで描画・表示できるアプリケーションです。" />
     <meta name="twitter:image" content="https://bem130.github.io/graphapp/image.png" />
 
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.main.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/loader.min.js"></script>
+    
     <style>
         html, body {
             margin: 0;
@@ -35,17 +38,66 @@
         :root {
             color-scheme: dark light;
         }
+        .update-button {
+            height: fit-content !important;
+        }
     </style>
 </head>
 <body>
     <canvas id="graph_canvas"></canvas>
-    <script type="module">
-        import init, { start } from './graphapp.js';
-        async function run() {
-            await init();
-            await start('graph_canvas');
-        }
-        run();
-    </script>
+    <div id="container" style="width:800px;height:600px;border:1px solid grey"></div>
 </body>
 </html>
+<script type="module">
+    import init, { start, update } from './graphapp.js';
+    async function run() {
+        await init();
+        await start('graph_canvas');
+    }
+    window.update = update;
+    run();
+</script>
+<script>
+
+let myEditor;
+let defaultCode = "";
+require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs'} });
+require(['vs/editor/editor.main'], function() {
+    // Hover on each property to see its docs!
+    myEditor = monaco.editor.create(document.getElementById("container"), {
+        value: defaultCode,
+        language: "javascript",
+        automaticLayout: true,
+        theme: 'vs-dark',
+    });
+    myEditor.getModel().onDidChangeContent((event) => {
+        console.log('現在の内容:', myEditor.getValue());
+        update(myEditor.getValue());
+    });
+    console.log('エディタが初期化されました。');
+
+});
+
+function setup_editor() {
+    let editor = document.querySelector("#container");
+    let window = document.querySelector("#monaco-editor");
+    if (!window) {
+        window.setTimeout(setup_editor, 100);
+        return;
+    }
+    {
+        let button = document.createElement("button");
+        button.textContent = "再実行";
+        button.className = "update-button";
+        window.appendChild(button);
+        button.addEventListener("click", () => {
+            if (myEditor) {
+                update(myEditor.getValue());
+            } else {
+            }
+        });
+    }
+    window.appendChild(editor);
+}
+window.addEventListener("load", setup_editor);
+</script>
