@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 
 mod graph;
 
+use eframe::egui;
 use graph::ParametricPlotApp;
 
 #[cfg(target_arch = "wasm32")]
@@ -23,14 +24,32 @@ pub async fn start(canvas_id: &str) -> Result<(), JsValue> {
         .unwrap()
         .dyn_into::<web_sys::HtmlCanvasElement>()
         .unwrap();
-    
-    let web_options = eframe::WebOptions::default();
+      let web_options = eframe::WebOptions::default();
     
     eframe::WebRunner::new()
         .start(
             canvas,
             web_options,
-            Box::new(|cc| Ok(Box::new(ParametricPlotApp::default()))),
+            Box::new(|cc| {
+                // フォント定義をカスタマイズ
+                let mut fonts = egui::FontDefinitions::default();
+                fonts.font_data.insert(
+                    "NotoSerifJP".to_owned(),
+                    egui::FontData::from_static(include_bytes!("fonts/NotoSerifJP-VariableFont_wght.ttf")).into(),
+                );
+                fonts.font_data.insert(
+                    "MPLUS1Code".to_owned(),
+                    egui::FontData::from_static(include_bytes!("fonts/MPLUS1Code-VariableFont_wght.ttf")).into(),
+                );
+                if let Some(mono) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                    mono.insert(0, "MPLUS1Code".to_owned());
+                }
+                if let Some(prop) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                    prop.insert(0, "NotoSerifJP".to_owned());
+                }
+                cc.egui_ctx.set_fonts(fonts);
+                Ok(Box::new(ParametricPlotApp::default()))
+            }),
         )
         .await?;
     
