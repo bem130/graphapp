@@ -301,7 +301,7 @@ impl App for ParametricPlotApp {
             // --- スライダー・チェックボックスを重ねて表示 ---
             if !self.sliders.is_empty() || !self.checkboxes.is_empty() || !self.color_pickers.is_empty() {
                 // 左上にパラメータパネルを配置
-                egui::Window::new("パラメータ")
+                let subwin = egui::Window::new("パラメータ")
                     .resizable(false)
                     .show(ctx, |ui| {
                         ui.set_min_width(100.0);
@@ -335,6 +335,8 @@ impl App for ParametricPlotApp {
                             });
                         }
                     });
+                #[cfg(target_arch = "wasm32")]
+                subwin.aware();
             }
 
             // --- ログ出力ウィンドウ ---
