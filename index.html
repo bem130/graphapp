@@ -176,8 +176,8 @@ require(['vs/editor/editor.main'], function() {
 
 function setup_editor() {
     let editor = document.querySelector("#container");
-    let window = document.querySelector("#monaco-editor");
-    if (!window) {
+    let subwindow = document.querySelector("#monaco-editor");
+    if (subwindow==null) {
         window.setTimeout(setup_editor, 100);
         return;
     }
@@ -185,7 +185,7 @@ function setup_editor() {
         let button = document.createElement("button");
         button.textContent = "再実行";
         button.className = "update-button";
-        window.appendChild(button);
+        subwindow.appendChild(button);
         button.addEventListener("click", () => {
             if (myEditor) {
                 update(myEditor.getValue());
@@ -193,7 +193,7 @@ function setup_editor() {
             }
         });
     }
-    window.appendChild(editor);
+    subwindow.appendChild(editor);
 }
 window.addEventListener("load", setup_editor);
 </script>
