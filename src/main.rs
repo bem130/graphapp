@@ -14,12 +14,12 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
             .with_min_inner_size([400.0, 300.0])
-            .with_title("Egui Parametric Plot"),
+            .with_title("Neknaj Graph Plotter"),
         ..Default::default()
     };
 
     eframe::run_native(
-        "Egui Parametric Plot",
+        "Neknaj Graph Plotter",
         native_options,
         Box::new(|cc| {
             // フォント定義をカスタマイズ
