@@ -75,6 +75,102 @@ require(['vs/editor/editor.main'], function() {
         update(myEditor.getValue());
     });
     console.log('エディタが初期化されました。');
+    const apiSuggestions = [
+        // UI要素定義API
+        {
+            label: 'addSlider',
+            kind: monaco.languages.CompletionItemKind.Function,
+            documentation: 'スライダーを定義します。\naddSlider(name: String, params: Object)',
+            insertText: "addSlider('${1:name}', { min: ${2:0.0}, max: ${3:1.0}, step: ${4:0.1}, default: ${5:0.0} })",
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        },
+        {
+            label: 'addCheckbox',
+            kind: monaco.languages.CompletionItemKind.Function,
+            documentation: 'チェックボックスを定義します。\naddCheckbox(name: String, label: String, params?: Object)',
+            insertText: "addCheckbox('${1:name}', '${2:ラベル}', { default: ${3:true} })",
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        },
+        {
+            label: 'addColorpicker',
+            kind: monaco.languages.CompletionItemKind.Function,
+            documentation: 'カラーピッカーを定義します。\naddColorpicker(name: String, params?: Object)',
+            insertText: "addColorpicker('${1:name}', { default: [${2:255}, ${3:255}, ${4:255}] })",
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        },
+        // 描画API
+        {
+            label: 'addParametricGraph',
+            kind: monaco.languages.CompletionItemKind.Function,
+            documentation: '媒介変数曲線を描画します。\naddParametricGraph(name: String, func: Function, range: Object, style?: Object)',
+            insertText: [
+            "addParametricGraph(",
+            "    '${1:曲線名}',",
+            "    function(t) { return [${2:x式}, ${3:y式}]; },",
+            "    { min: ${4:0}, max: ${5:2 * Math.PI}, num_points: ${6:500} },",
+            "    { color: [${7:200}, ${8:100}, ${9:0}], weight: ${10:1.5} }",
+            ");"
+            ].join('\n'),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        },
+        {
+            label: 'addVector',
+            kind: monaco.languages.CompletionItemKind.Function,
+            documentation: 'ベクトル（矢印）を描画します。\naddVector(name: String, start_func: Function, vec_func: Function, t: Number, style?: Object)',
+            insertText: [
+            "addVector(",
+            "    '${1:ベクトル名}',",
+            "    function(t) { return [${2:x0}, ${3:y0}]; },",
+            "    function(t) { return [${4:dx}, ${5:dy}]; },",
+            "    ${6:t値},",
+            "    { color: [${7:0}, ${8:150}, ${9:200}], weight: ${10:1.5} }",
+            ");"
+            ].join('\n'),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+        }
+    ];
+
+    // Monacoエディタ初期化後に登録
+    monaco.languages.registerCompletionItemProvider('javascript', {
+        triggerCharacters: ['\n'],
+        provideCompletionItems: function() {
+            console.log('Completion provider called'); // Debug
+            return { suggestions: apiSuggestions };
+        }
+    });
+
+    monaco.languages.registerHoverProvider('javascript', {
+        provideHover: function(model, position) {
+            const word = model.getWordAtPosition(position);
+            if (!word) return;
+
+            // 関数名と説明の対応表
+            const docs = {
+                setup: "スクリプトの初期化時に一度だけ呼び出される関数です。\nこの関数内で、スライダー、チェックボックス、カラーピッカーなどの UI 要素を定義します。",
+                draw: "グラフの描画処理を行う関数です。\nUI 要素の値が変更されるたびに呼び出されます。",
+                addSlider: "スライダーを定義します。\naddSlider(name: String, params: Object)\n例: addSlider('amplitude', { min: 0, max: 10, step: 0.5, default: 5 });",
+                addCheckbox: "チェックボックスを定義します。\naddCheckbox(name: String, label: String, params?: Object)\n例: addCheckbox('isVisible', '表示する', { default: false });",
+                addColorpicker: "カラーピッカーを定義します。\naddColorpicker(name: String, params?: Object)\n例: addColorpicker('graphColor', { default: [0, 0, 255] });",
+                addParametricGraph: "媒介変数表示された曲線を描画します。\naddParametricGraph(name: String, func: Function, range: Object, style?: Object)\n例: addParametricGraph('リサージュ図形', function(t) { return [Math.sin(3 * t), Math.cos(2 * t)]; }, { min: 0, max: 2 * Math.PI, num_points: 1000 }, { color: [255, 165, 0], weight: 2.0 });",
+                addVector: "ベクトル（矢印）を描画します。\naddVector(name: String, start_func: Function, vec_func: Function, t: Number, style?: Object)\n例: addVector('接線ベクトル', function(t) { return [Math.cos(t), Math.sin(t)]; }, function(t) { return [-Math.sin(t), Math.cos(t)]; }, 1.5, { color: [0, 255, 0], weight: 2.0 });",
+                console: "JavaScript 内から Rust のコンソールに情報を出力できます。\nconsole.log(...args), console.error(...args)"
+            };
+
+            const doc = docs[word.word];
+            if (doc) {
+                return {
+                    range: new monaco.Range(
+                        position.lineNumber,
+                        word.startColumn,
+                        position.lineNumber,
+                        word.endColumn
+                    ),
+                    contents: [{ value: '**' + word.word + '**\n\n' + doc }]
+                };
+            }
+        }
+    });
+
 
 });
 
