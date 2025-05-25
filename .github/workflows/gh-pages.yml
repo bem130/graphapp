@@ -1,0 +1,44 @@
+name: Deploy WASM to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: |
+          wasm-pack build --release --target web --out-dir pkg
+
+      - name: Remove pkg/.gitignore if exists
+        run: |
+          if [ -f pkg/.gitignore ]; then rm pkg/.gitignore; fi
+
+      - name: Copy index.html
+        run: cp index.html pkg/
+
+      - name: Replace graphapp.js path in pkg/index.html
+        run: sed -i "s|'./pkg/graphapp.js'|'./graphapp.js'|g" pkg/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./pkg
