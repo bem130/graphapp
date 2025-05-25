@@ -1,0 +1,15 @@
+{
+  "name": "graphapp",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "graphapp_bg.wasm",
+    "graphapp.js",
+    "graphapp.d.ts"
+  ],
+  "main": "graphapp.js",
+  "types": "graphapp.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

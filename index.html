@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphApp</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+        :root {
+            color-scheme: dark light;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="graph_canvas"></canvas>
+    <script type="module">
+        import init, { start } from './graphapp.js';
+
+        async function run() {
+            await init();
+            await start('graph_canvas');
+        }
+
+        run();
+    </script>
+</body>
+</html>
