@@ -36,6 +36,9 @@ jobs:
       - name: Copy index.html
         run: cp index.html pkg/
 
+      - name: Copy image.png
+        run: cp image.png pkg/
+
       - name: Replace graphapp.js path in pkg/index.html
         run: sed -i "s|'./pkg/graphapp.js'|'./graphapp.js'|g" pkg/index.html
 
