@@ -193,13 +193,13 @@ impl App for ParametricPlotApp {
                     }
 
                     for (entry, count) in display_entries.iter() {
-                        let mut text = egui::RichText::new(format!("[{}] {}  x{}",
+                        let mut text = egui::RichText::new(format!("[{}] x{}\n{}",
                             match entry.log_type {
                                 LogType::Stdout => "stdout",
                                 LogType::Stderr => "stderr",
                             },
+                            count,
                             entry.message,
-                            count
                         ));
                         if entry.log_type == LogType::Stderr {
                             text = text.color(Color32::RED);
