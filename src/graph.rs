@@ -137,6 +137,7 @@ impl App for ParametricPlotApp {
         let mut js_code_changed = false;
 
 
+        #[cfg(target_arch = "wasm32")]
         if let Ok(mut content) = PENDING_CONTENT.try_lock() {
             match content.clone() {
                 Some(x) => {
@@ -153,6 +154,11 @@ impl App for ParametricPlotApp {
             .default_size([700.0, 500.0])
             .resizable(true)
             .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Copy API Docs").clicked() {
+                        ui.ctx().copy_text(self.api_docs_content.clone());
+                    }
+                });
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     egui_commonmark::CommonMarkViewer::new()
                         .show(ui, &mut self.commonmark_cache, &self.api_docs_content);
