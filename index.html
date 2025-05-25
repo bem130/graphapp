@@ -22,34 +22,15 @@
 
     <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/editor/editor.main.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs/loader.min.js"></script>
-    
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            width: 100%;
-            overflow: hidden;
-        }
-        canvas {
-            width: 100%;
-            height: 100%;
-        }
-        :root {
-            color-scheme: dark light;
-        }
-        .update-button {
-            height: fit-content !important;
-        }
-        #container {
-            width: 100% !important;
-            height: 100% !important;
-        }
-    </style>
 </head>
 <body>
     <canvas id="graph_canvas"></canvas>
     <div id="container" style="width:800px;height:600px;border:1px solid grey"></div>
+    <div class="splash">
+        <p class="title">Neknaj Graph Plotter</p>
+        <p class="loading">Loading</p>
+        <div class="spinner"></div>
+    </div>
 </body>
 </html>
 <script type="module">
@@ -182,6 +163,7 @@ function setup_editor() {
     let editor = document.querySelector("#container");
     let subwindow = document.querySelector("#monaco-editor");
     if (subwindow==null) {
+        console.log("retry")
         window.setTimeout(setup_editor, 100);
         return;
     }
@@ -201,3 +183,71 @@ function setup_editor() {
 }
 window.addEventListener("load", setup_editor);
 </script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Hurricane&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Birthstone+Bounce:wght@400;500&display=swap');
+
+:root {
+    color-scheme: dark light;
+    font-family: cursive, serif;
+    font-weight: lighter;
+    font-style: normal;
+    --background-color: #1b1b1b;
+    --text-color: #ffffff;
+}
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+body > .container {
+    display: none;
+}
+canvas {
+    height: 100%;
+    width: 100%;
+    position: absolute;
+
+}
+.update-button {
+    height: fit-content !important;
+}
+#container {
+    width: 100% !important;
+    height: 100% !important;
+}
+.splash {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: -1;
+}
+.splash .title {
+    font-size: 10em;
+    font-family: "Hurricane", cursive, serif;
+}
+.splash .loading {
+    font-size: 4em;
+    font-family: "Birthstone Bounce", cursive;
+}
+.spinner {
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top: 3px solid var(--text-color);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    margin: 0 auto;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+    </style>
