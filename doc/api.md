@@ -1,6 +1,6 @@
 # JavaScript API リファレンス
 
-このドキュメントは、グラフ描画アプリケーションの JavaScript 環境で使用できる API について説明します。
+このドキュメントは、グラフ描画アプリケーション Neknaj Graph Plotter の JavaScript 環境で使用できる API について説明します。
 
 ## グローバル関数
 
@@ -9,36 +9,11 @@
 スクリプトの初期化時に一度だけ呼び出される関数です。
 この関数内で、スライダー、チェックボックス、カラーピッカーなどの UI 要素を定義します。
 
-**例:**
-
-```js
-function setup() {
-    addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
-    addColorpicker('lineColor', { default: [255, 0, 0] });
-    addCheckbox('show', '円を表示する', { default: true });
-}
-```
-
 ### `draw()`
 
 グラフの描画処理を行う関数です。
 `setup()` の初回実行後、および UI 要素（スライダー、チェックボックス、カラーピッカー）の値が変更されるたびに呼び出されます。
 この関数内で `addParametricGraph` や `addVector` を呼び出してグラフ要素を描画します。
-
-**例:**
-
-```js
-function draw() {
-    if (show) {
-        addParametricGraph(
-            '円',
-            function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
-            { min: 0, max: 2 * Math.PI, num_points: 100 },
-            { color: lineColor, weight: 2.0 }
-        );
-    }
-}
-```
 
 ## UI 要素定義 API
 
@@ -176,3 +151,25 @@ console.error('エラーが発生しました:', errorObject);
 
 *   `stdout(String)`: 文字列を標準出力へ。`console.log` の内部で使用。
 *   `stderr(String)`: 文字列を標準エラーへ。`console.error` の内部で使用。
+
+
+# サンプルコード
+
+```js
+function setup() {
+    addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
+    addColorpicker('lineColor', { default: [255, 0, 0] });
+    addCheckbox('show', '円を表示する', { default: true });
+}
+
+function draw() {
+    if (show) {
+        addParametricGraph(
+            '円',
+            function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
+            { min: 0, max: 2 * Math.PI, num_points: 100 },
+            { color: lineColor, weight: 2.0 }
+        );
+    }
+}
+```
