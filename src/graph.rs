@@ -3,6 +3,7 @@ use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
 use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
+use egui_commonmark;
 use egui_extras::syntax_highlighting;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -59,6 +60,8 @@ pub struct ParametricPlotApp {
     vectors: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Vec<[f64; 2]>, Color32, f32)>>>,  // (名前, 始点群, 終点群, 色, 太さ)
     js_code: String, // JavaScriptエディタ用
     last_js_code: String, // 前回実行したJSコード
+    api_docs_content: String,
+    commonmark_cache: egui_commonmark::CommonMarkCache,
 }
 
 impl Default for ParametricPlotApp {
@@ -91,6 +94,8 @@ function draw() {
             vectors: Rc::new(RefCell::new(Vec::new())),
             js_code: default_js_code.clone(),
             last_js_code: default_js_code,
+            api_docs_content: include_str!("../doc/api.md").to_string(),
+            commonmark_cache: egui_commonmark::CommonMarkCache::default(),
         }
     }
 }
@@ -102,6 +107,18 @@ impl App for ParametricPlotApp {
         let mut js_error: Option<String> = None;
         let mut need_redraw = false;
         let mut js_code_changed = false;
+
+        // API Documentationウィンドウを常に表示
+        egui::Window::new("API Documentation")
+            .default_size([700.0, 500.0])
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui_commonmark::CommonMarkViewer::new()
+                        .show(ui, &mut self.commonmark_cache, &self.api_docs_content);
+                });
+            });
+
         egui::SidePanel::right("js_editor_panel").min_width(600.0).show(ctx, |ui| {
             ui.heading("JavaScript エディタ");
             ui.label("グラフ描画用のJavaScriptコードを編集できます。");
@@ -134,7 +151,7 @@ impl App for ParametricPlotApp {
                 if response.changed() {
                     js_code_changed = true;
                 }
-                if ui.button("グラフを更新").clicked() {
+                if ui.button("再実行").clicked() {
                     js_code_changed = true;
                 }
             });
