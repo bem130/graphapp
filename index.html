@@ -1,9 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neknaj Graph Plotter</title>
+
+    <!-- OGP Tags -->
+    <meta property="og:title" content="Neknaj Graph Plotter" />
+    <meta property="og:description" content="インタラクティブなグラフをJavaScriptで描画・表示できるアプリケーションです。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bem130.github.io/graphapp/" />
+    <meta property="og:image" content="https://bem130.github.io/graphapp/image.png" />
+    <meta property="og:site_name" content="Neknaj Graph Plotter" />
+    <meta property="og:locale" content="ja_JP" />
+
+    <!-- Twitter Card Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Neknaj Graph Plotter" />
+    <meta name="twitter:description" content="インタラクティブなグラフをJavaScriptで描画・表示できるアプリケーションです。" />
+    <meta name="twitter:image" content="https://bem130.github.io/graphapp/image.png" />
+
     <style>
         html, body {
             margin: 0;
@@ -25,12 +41,10 @@
     <canvas id="graph_canvas"></canvas>
     <script type="module">
         import init, { start } from './graphapp.js';
-
         async function run() {
             await init();
             await start('graph_canvas');
         }
-
         run();
     </script>
 </body>
