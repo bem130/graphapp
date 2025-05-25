@@ -1,12 +1,20 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 mod graph;
 
 use eframe::egui;
-use graph::ParametricPlotApp;
+use graph::{ParametricPlotApp, setup_logging};
 
 fn main() -> eframe::Result<()> {
+    // ログ設定を初期化
+    setup_logging();
+
     // アプリケーションオプションの設定
     let native_options = eframe::NativeOptions {
-        // window size fields removed for compatibility
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 600.0])
+            .with_min_inner_size([400.0, 300.0])
+            .with_title("Egui Parametric Plot"),
         ..Default::default()
     };
 

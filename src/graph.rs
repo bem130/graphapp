@@ -1,11 +1,24 @@
-use boa_engine::object::Object;
 use boa_engine::JsObject;
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
-use boa_engine::{Context as BoaContext, Source, JsValue,JsResult, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
-use colored::*;
+use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
 use egui_extras::syntax_highlighting;
+
+#[cfg(not(target_arch = "wasm32"))]
+use colored::Colorize;
+
+// WASMでのログ出力設定
+#[cfg(target_arch = "wasm32")]
+pub fn setup_logging() {
+    console_log::init_with_level(log::Level::Debug).expect("error initializing log");
+}
+
+// ネイティブでのログ出力設定
+#[cfg(not(target_arch = "wasm32"))]
+pub fn setup_logging() {
+    env_logger::init();
+}
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -274,7 +287,10 @@ impl App for ParametricPlotApp {
                 // stderr
                 let stderr = |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
                     let content = args.get_or_undefined(0).to_string(context)?;
+                    #[cfg(not(target_arch = "wasm32"))]
                     eprintln!("{}", content.to_std_string().unwrap().red());
+                    #[cfg(target_arch = "wasm32")]
+                    web_sys::console::error_1(&content.to_std_string().unwrap().into());
                     Ok(JsValue::undefined())
                 };
                 self.js_context.register_global_builtin_callable("stderr".into(), 1, NativeFunction::from_copy_closure(stderr)).unwrap();
