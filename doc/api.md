@@ -11,7 +11,7 @@
 
 **例:**
 
-```javascript
+```js
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
@@ -27,7 +27,7 @@ function setup() {
 
 **例:**
 
-```javascript
+```js
 function draw() {
     if (show) {
         addParametricGraph(
@@ -58,7 +58,7 @@ function draw() {
 
 **例:**
 
-```javascript
+```js
 addSlider('amplitude', { min: 0, max: 10, step: 0.5, default: 5 });
 // これにより、グローバル変数 `amplitude` が利用可能になる
 ```
@@ -74,7 +74,7 @@ addSlider('amplitude', { min: 0, max: 10, step: 0.5, default: 5 });
 
 **例:**
 
-```javascript
+```js
 addCheckbox('isVisible', '表示する', { default: false });
 // これにより、グローバル変数 `isVisible` が利用可能になる
 ```
@@ -89,7 +89,7 @@ addCheckbox('isVisible', '表示する', { default: false });
 
 **例:**
 
-```javascript
+```js
 addColorpicker('graphColor', { default: [0, 0, 255] }); // 青色
 // これにより、グローバル変数 `graphColor` が [r, g, b] 配列として利用可能になる
 ```
@@ -115,7 +115,7 @@ addColorpicker('graphColor', { default: [0, 0, 255] }); // 青色
 
 **例:**
 
-```javascript
+```js
 addParametricGraph(
     'リサージュ図形',
     function(t) { return [Math.sin(3 * t), Math.cos(2 * t)]; },
@@ -138,7 +138,7 @@ addParametricGraph(
 
 **例:**
 
-```javascript
+```js
 let t_val = 1.5; // スライダーなどで動的に変更可能
 addVector(
     '接線ベクトル',
@@ -159,7 +159,7 @@ JavaScript 内から Rust のコンソールに情報を出力できます。
 
 **例:**
 
-```javascript
+```js
 console.log('デバッグ情報:', myVariable, { value: 42 });
 ```
 
@@ -169,7 +169,7 @@ console.log('デバッグ情報:', myVariable, { value: 42 });
 
 **例:**
 
-```javascript
+```js
 console.error('エラーが発生しました:', errorObject);
 ```
 **内部API (直接呼び出し非推奨)**
