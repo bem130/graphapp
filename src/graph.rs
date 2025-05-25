@@ -135,7 +135,7 @@ impl App for ParametricPlotApp {
         let mut js_code_changed = false;
 
         // API Documentationウィンドウを常に表示
-        egui::Window::new("API Documentation")
+        let subwin = egui::Window::new("API Documentation")
             .default_size([700.0, 500.0])
             .resizable(true)
             .show(ctx, |ui| {
@@ -144,8 +144,10 @@ impl App for ParametricPlotApp {
                         .show(ui, &mut self.commonmark_cache, &self.api_docs_content);
                 });
             });
+        #[cfg(target_arch = "wasm32")]
+        subwin.aware();
 
-        egui::Window::new("Javascript Editor").min_width(600.0).show(ctx, |ui| {
+        let subwin = egui::Window::new("Javascript Editor").min_width(600.0).show(ctx, |ui| {
             let mut theme = syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
             if ui.button("再実行").clicked() {
                 js_code_changed = true;
@@ -179,6 +181,8 @@ impl App for ParametricPlotApp {
                 }
             });
         });
+        #[cfg(target_arch = "wasm32")]
+        subwin.aware();
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut js_error: Option<String> = None;
             let mut need_redraw = false;
@@ -312,7 +316,7 @@ impl App for ParametricPlotApp {
             }
 
             // --- ログ出力ウィンドウ ---
-            egui::Window::new("出力ログ")
+            let subwin = egui::Window::new("出力ログ")
                 .default_size([600.0, 200.0]) // デフォルトサイズを調整
                 .resizable(true)
                 .show(ctx, |ui| {
@@ -353,6 +357,8 @@ impl App for ParametricPlotApp {
                             ui.label(text); // 常にRichTextを使用するように変更 (count > 1 の条件を削除)
                         }});
                 });
+            #[cfg(target_arch = "wasm32")]
+            subwin.aware();
 
             // --- JavaScript関連の処理 ---
             // JSコードが変更された場合は再評価
@@ -668,6 +674,7 @@ impl App for ParametricPlotApp {
         #[cfg(target_arch = "wasm32")]
         hframe::HtmlWindow::new("editor").content("hello").show(ctx);
         #[cfg(target_arch = "wasm32")]
+
         hframe::HtmlWindow::new("editor2").content("hello").show(ctx);
         #[cfg(target_arch = "wasm32")]
         hframe::sync(ctx);
