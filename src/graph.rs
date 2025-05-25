@@ -111,6 +111,8 @@ function draw() {
     }
 }
 "#.to_string();
+        #[cfg(target_arch = "wasm32")]
+        update_monaco(&default_js_code);
         Self {
             sliders: Vec::new(),
             checkboxes: Vec::new(),
@@ -190,6 +192,8 @@ impl App for ParametricPlotApp {
                     let response = ui.add_sized(ui.available_size(), text_edit_widget);
                 if response.changed() {
                     js_code_changed = true;
+                    #[cfg(target_arch = "wasm32")]
+                    update_monaco(&self.js_code);
                 }
             });
         });
@@ -684,7 +688,7 @@ impl App for ParametricPlotApp {
         });
 
         #[cfg(target_arch = "wasm32")]
-        hframe::HtmlWindow::new("editor").content("").show(ctx);
+        hframe::HtmlWindow::new("Monaco Editor").content("").show(ctx);
         #[cfg(target_arch = "wasm32")]
         hframe::sync(ctx);
         ctx.request_repaint();
@@ -699,4 +703,11 @@ pub fn update(data: &str) {
     if let Ok(mut content) = PENDING_CONTENT.try_lock() {
         *content = Some(data.to_string());
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(module = "/src/api.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = update)]
+    pub fn update_monaco(data: &str);
 }

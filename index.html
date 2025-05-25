@@ -46,30 +46,26 @@
 <body>
     <canvas id="graph_canvas"></canvas>
     <div id="container" style="width:800px;height:600px;border:1px solid grey"></div>
-    <script type="module">
-        import init, { start, update } from './pkg/graphapp.js';
-        async function run() {
-            await init();
-            await start('graph_canvas');
-        }
-        window.update = update;
-        run();
-    </script>
 </body>
 </html>
+<script type="module">
+    import init, { start, update } from './pkg/graphapp.js';
+    async function run() {
+        await init();
+        await start('graph_canvas');
+    }
+    window.update = update;
+    run();
+</script>
 <script>
 
 let myEditor;
+let defaultCode = "";
 require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs'} });
 require(['vs/editor/editor.main'], function() {
-
-    const value = /* set from `myEditor.getModel()`: */ `function hello() {
-     alert('Hello world!');
-}`;
-
     // Hover on each property to see its docs!
     myEditor = monaco.editor.create(document.getElementById("container"), {
-        value,
+        value: defaultCode,
         language: "javascript",
         automaticLayout: true,
         theme: 'vs-dark',
@@ -78,12 +74,13 @@ require(['vs/editor/editor.main'], function() {
         console.log('現在の内容:', myEditor.getValue());
         update(myEditor.getValue());
     });
+    console.log('エディタが初期化されました。');
 
 });
 
 function setup_editor() {
     let editor = document.querySelector("#container");
-    let window = document.querySelector("#editor");
+    let window = document.querySelector("#monaco-editor");
     if (!window) {
         window.setTimeout(setup_editor, 100);
         return;
