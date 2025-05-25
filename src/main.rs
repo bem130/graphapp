@@ -53,22 +53,19 @@ impl Default for ParametricPlotApp {
         let js_context = BoaContext::default();
         let default_js_code = r#"
 function setup() {
-    stdout("hello world")
-    addSlider('a', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
-    addSlider('b', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
-    addSlider('r', { min: 0.1, max: 2.0, step: 0.1, default: 1.0 });
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
     addCheckbox('show', '円を表示する', { default: true });
 }
 function draw() {
-    console.log('Radius value:', radius); // デバッグ用にradiusの値を出力
-    addParametricGraph(
-        `楕円 (a=${a.toFixed(1)}, b=${b.toFixed(1)})`,
-        function(t) { return [a * Math.cos(t), b * Math.sin(t)]; },
-        { min: 0, max: 2 * Math.PI, num_points: 1000 },
-        { color: lineColor, weight: 2.0 }
-    );
+    if (show) {
+        addParametricGraph(
+            '円',
+            function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
+            { min: 0, max: 2 * Math.PI, num_points: 100 },
+            { color: lineColor, weight: 2.0 }
+        );
+    }
 }
 "#.to_string();
         Self {
@@ -545,12 +542,13 @@ impl App for ParametricPlotApp {
                     let array_ctor = global.get(js_string!("Array"), &mut self.js_context).unwrap();
                     let array_constructor = array_ctor.as_constructor().expect("Array is not a constructor");
                     let arr = array_constructor.construct(&[JsValue::from(3)], None, &mut self.js_context).unwrap();
+                    
                     // 配列に色の値をセット
-                    for (i, &v) in [picker.value.r(), picker.value.g(), picker.value.b()].iter().enumerate() {
-                        let index = i as i32; // Using i32 which implements Into<PropertyKey>
-                        let val = JsValue::from(v as u32);
-                        arr.set(index, val, false, &mut self.js_context).ok(); // Added 'false' for throw parameter
-                    }
+                    arr.set(0, JsValue::from(picker.value.r() as u32), false, &mut self.js_context).ok();
+                    arr.set(1, JsValue::from(picker.value.g() as u32), false, &mut self.js_context).ok();
+                    arr.set(2, JsValue::from(picker.value.b() as u32), false, &mut self.js_context).ok();
+                    
+                    // グローバル変数として設定
                     self.js_context.register_global_property::<PropertyKey, JsObject>(js_string!(picker.name.clone()).into(), arr, Attribute::all()).ok();
                 }
 
