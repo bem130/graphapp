@@ -134,6 +134,18 @@ impl App for ParametricPlotApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         let mut js_code_changed = false;
 
+
+        if let Ok(mut content) = PENDING_CONTENT.try_lock() {
+            match content.clone() {
+                Some(x) => {
+                    self.js_code = x;
+                    js_code_changed = true;
+                    *content = None;
+                },
+                _ => {}
+            }
+        }
+
         // API Documentationウィンドウを常に表示
         let subwin = egui::Window::new("API Documentation")
             .default_size([700.0, 500.0])
@@ -672,12 +684,10 @@ impl App for ParametricPlotApp {
         });
 
         #[cfg(target_arch = "wasm32")]
-        hframe::HtmlWindow::new("editor").content("hello").show(ctx);
-        #[cfg(target_arch = "wasm32")]
-
-        hframe::HtmlWindow::new("editor2").content("hello").show(ctx);
+        hframe::HtmlWindow::new("editor").content("").show(ctx);
         #[cfg(target_arch = "wasm32")]
         hframe::sync(ctx);
+        ctx.request_repaint();
     }
 }
 

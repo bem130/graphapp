@@ -38,6 +38,9 @@
         :root {
             color-scheme: dark light;
         }
+        .update-button {
+            height: fit-content !important;
+        }
     </style>
 </head>
 <body>
@@ -55,32 +58,49 @@
 </body>
 </html>
 <script>
-    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs'} });
-    require(['vs/editor/editor.main'], function() {
-const value = /* set from `myEditor.getModel()`: */ `function hello() {
-	alert('Hello world!');
+
+let myEditor;
+require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.46.0/min/vs'} });
+require(['vs/editor/editor.main'], function() {
+
+    const value = /* set from `myEditor.getModel()`: */ `function hello() {
+     alert('Hello world!');
 }`;
 
-// Hover on each property to see its docs!
-const myEditor = monaco.editor.create(document.getElementById("container"), {
-	value,
-	language: "javascript",
-	automaticLayout: true,
-});
-myEditor.getModel().onDidChangeContent((event) => {
-    console.log('現在の内容:', myEditor.getValue());
+    // Hover on each property to see its docs!
+    myEditor = monaco.editor.create(document.getElementById("container"), {
+        value,
+        language: "javascript",
+        automaticLayout: true,
+        theme: 'vs-dark',
+    });
+    myEditor.getModel().onDidChangeContent((event) => {
+        console.log('現在の内容:', myEditor.getValue());
+        update(myEditor.getValue());
+    });
+
 });
 
-    });
-    
-    function setup_editor() {
-        let editor = document.querySelector("#container");
-        let window = document.querySelector("#editor");
-        if (!window) {
-            window.setTimeout(setup_editor, 100);
-            return;
-        }
-        window.appendChild(editor);
+function setup_editor() {
+    let editor = document.querySelector("#container");
+    let window = document.querySelector("#editor");
+    if (!window) {
+        window.setTimeout(setup_editor, 100);
+        return;
     }
-    window.addEventListener("load", setup_editor);
+    {
+        let button = document.createElement("button");
+        button.textContent = "再実行";
+        button.className = "update-button";
+        window.appendChild(button);
+        button.addEventListener("click", () => {
+            if (myEditor) {
+                update(myEditor.getValue());
+            } else {
+            }
+        });
+    }
+    window.appendChild(editor);
+}
+window.addEventListener("load", setup_editor);
 </script>
