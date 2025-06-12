@@ -178,6 +178,17 @@ function setup_editor() {
             } else {
             }
         });
+        // ここから全削除ボタン追加
+        let clearButton = document.createElement("button");
+        clearButton.textContent = "全削除";
+        clearButton.className = "update-button";
+        subwindow.appendChild(clearButton);
+        clearButton.addEventListener("click", () => {
+            if (myEditor) {
+                myEditor.setValue("");
+            }
+        });
+        // ここまで
     }
     subwindow.appendChild(editor);
 }
