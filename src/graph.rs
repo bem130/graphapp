@@ -1,4 +1,3 @@
-
 #[cfg(target_arch = "wasm32")]
 use hframe::Aware;
 
@@ -94,7 +93,7 @@ pub struct ParametricPlotApp {
 impl Default for ParametricPlotApp {
     fn default() -> Self {
         let js_context = BoaContext::default();
-        let default_js_code = r#"
+        let mut default_js_code = r#"
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
@@ -112,7 +111,33 @@ function draw() {
 }
 "#.to_string();
         #[cfg(target_arch = "wasm32")]
-        update_monaco(&default_js_code);
+        {
+            use web_sys::Url;
+            use form_urlencoded::parse;
+            use urlencoding::decode;
+            if let Some(window) = web_sys::window() {
+                if let Ok(href) = window.location().href() {
+                    if let Ok(mut url) = Url::new(&href) {
+                        // クエリをパース
+                        let search = url.search();
+                        let mut code_val = None;
+                        if !search.is_empty() {
+                            for (k, v) in parse(search.trim_start_matches('?').as_bytes()) {
+                                if k == "code" {
+                                    if let Ok(decoded) = decode(&v) {
+                                        code_val = Some(decoded.into_owned());
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(code) = code_val {
+                            default_js_code = code;
+                        }
+                    }
+                }
+            }
+            update_monaco(&default_js_code);
+        }
         Self {
             sliders: Vec::new(),
             checkboxes: Vec::new(),
@@ -387,6 +412,38 @@ impl App for ParametricPlotApp {
             // --- JavaScript関連の処理 ---
             // JSコードが変更された場合は再評価
             if js_code_changed || !self.js_code_evaluated || self.js_code != self.last_js_code {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use urlencoding::encode;
+                    use form_urlencoded::Serializer;
+                    if let Some(window) = web_sys::window() {
+                        if let Ok(href) = window.location().href() {
+                            if let Ok(mut url) = web_sys::Url::new(&href) {
+                                // 既存クエリをパース
+                                let search = url.search();
+                                let mut params: Vec<(String, String)> = vec![];
+                                if !search.is_empty() {
+                                    for (k, v) in form_urlencoded::parse(search.trim_start_matches('?').as_bytes()) {
+                                        if k != "code" {
+                                            params.push((k.into_owned(), v.into_owned()));
+                                        }
+                                    }
+                                }
+                                // codeパラメータを追加
+                                params.push(("code".to_string(), encode(&self.js_code).to_string()));
+                                // クエリ再構築
+                                let mut ser = Serializer::new(String::new());
+                                for (k, v) in params {
+                                    ser.append_pair(&k, &v);
+                                }
+                                let new_query = ser.finish();
+                                url.set_search(&format!("?{}", new_query));
+                                let _ = window.history().expect("history").replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url.href()));
+                            }
+                        }
+                    }
+                }
+
                 self.js_code_evaluated = false;
                 self.last_js_code = self.js_code.clone();
 
