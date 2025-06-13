@@ -196,6 +196,7 @@ impl App for ParametricPlotApp {
         #[cfg(target_arch = "wasm32")]
         subwin.aware();
 
+        #[cfg(not(target_arch = "wasm32"))]
         let subwin = egui::Window::new("Javascript Editor").min_width(600.0).show(ctx, |ui| {
             let mut theme = syntax_highlighting::CodeTheme::from_memory(ui.ctx(), ui.style());
             if ui.button("再実行").clicked() {
@@ -231,9 +232,9 @@ impl App for ParametricPlotApp {
                     update_monaco(&self.js_code);
                 }
             });
-        });
-        #[cfg(target_arch = "wasm32")]
-        subwin.aware();
+        }).aware();
+        // #[cfg(target_arch = "wasm32")]
+        // subwin.aware();
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut js_error: Option<String> = None;
             let mut need_redraw = false;
