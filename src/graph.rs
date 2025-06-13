@@ -232,7 +232,7 @@ impl App for ParametricPlotApp {
                     update_monaco(&self.js_code);
                 }
             });
-        }).aware();
+        });
         // #[cfg(target_arch = "wasm32")]
         // subwin.aware();
         egui::CentralPanel::default().show(ctx, |ui| {
