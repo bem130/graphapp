@@ -1,6 +1,3 @@
-#[cfg(target_arch = "wasm32")]
-use hframe::Aware;
-
 use boa_engine::JsObject;
 use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
@@ -8,6 +5,10 @@ use egui::Color32;
 use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
 use egui_commonmark;
 use egui_extras::syntax_highlighting;
+#[cfg(target_arch = "wasm32")]
+use hframe::Aware;
+use base64::{engine::general_purpose, Engine as _};
+use form_urlencoded::{parse, Serializer};
 
 
 #[cfg(target_arch = "wasm32")]
@@ -113,8 +114,6 @@ function draw() {
         #[cfg(target_arch = "wasm32")]
         {
             use web_sys::Url;
-            use form_urlencoded::parse;
-            use urlencoding::decode;
             if let Some(window) = web_sys::window() {
                 if let Ok(href) = window.location().href() {
                     if let Ok(mut url) = Url::new(&href) {
@@ -124,8 +123,11 @@ function draw() {
                         if !search.is_empty() {
                             for (k, v) in parse(search.trim_start_matches('?').as_bytes()) {
                                 if k == "code" {
-                                    if let Ok(decoded) = decode(&v) {
-                                        code_val = Some(decoded.into_owned());
+                                    // base64デコード→utf8
+                                    if let Ok(decoded_b64) = general_purpose::URL_SAFE_NO_PAD.decode(&*v) {
+                                        if let Ok(decoded_str) = String::from_utf8(decoded_b64) {
+                                            code_val = Some(decoded_str);
+                                        }
                                     }
                                 }
                             }
@@ -416,11 +418,10 @@ impl App for ParametricPlotApp {
             if js_code_changed || !self.js_code_evaluated || self.js_code != self.last_js_code {
                 #[cfg(target_arch = "wasm32")]
                 {
-                    use urlencoding::encode;
-                    use form_urlencoded::Serializer;
+                    use web_sys::Url;
                     if let Some(window) = web_sys::window() {
                         if let Ok(href) = window.location().href() {
-                            if let Ok(mut url) = web_sys::Url::new(&href) {
+                            if let Ok(mut url) = Url::new(&href) {
                                 // 既存クエリをパース
                                 let search = url.search();
                                 let mut params: Vec<(String, String)> = vec![];
@@ -431,8 +432,9 @@ impl App for ParametricPlotApp {
                                         }
                                     }
                                 }
-                                // codeパラメータを追加
-                                params.push(("code".to_string(), encode(&self.js_code).to_string()));
+                                // codeパラメータをbase64で追加
+                                let code_b64 = general_purpose::URL_SAFE_NO_PAD.encode(&self.js_code);
+                                params.push(("code".to_string(), code_b64));
                                 // クエリ再構築
                                 let mut ser = Serializer::new(String::new());
                                 for (k, v) in params {

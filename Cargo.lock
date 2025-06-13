@@ -1761,6 +1761,7 @@ dependencies = [
 name = "graphapp"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "boa_engine",
  "colored",
  "console_error_panic_hook",
