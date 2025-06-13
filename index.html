@@ -186,6 +186,10 @@ function setup_editor() {
         clearButton.addEventListener("click", () => {
             if (myEditor) {
                 myEditor.setValue("");
+                // ?codeパラメータを削除し履歴を追加
+                const url = new URL(window.location.href);
+                url.searchParams.delete("code");
+                history.pushState(null, "", url.pathname + url.search);
             }
         });
         // ここまで
@@ -193,6 +197,24 @@ function setup_editor() {
     subwindow.appendChild(editor);
 }
 window.addEventListener("load", setup_editor);
+window.addEventListener("popstate", () => {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
+    if (myEditor) {
+        if (code !== null) {
+            try {
+                myEditor.setValue(decodeURIComponent(code));
+            } catch (e) {
+                myEditor.setValue("");
+            }
+        } else {
+            myEditor.setValue("");
+        }
+    }
+    if (typeof update === "function") {
+        update(myEditor ? myEditor.getValue() : "");
+    }
+});
 </script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Hurricane&display=swap');
