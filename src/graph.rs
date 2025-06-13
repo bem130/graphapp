@@ -131,7 +131,9 @@ function draw() {
                             }
                         }
                         if let Some(code) = code_val {
-                            default_js_code = code;
+                            if !code.trim().is_empty() {
+                                default_js_code = code;
+                            }
                         }
                     }
                 }
