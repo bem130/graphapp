@@ -795,7 +795,7 @@ impl<'a> Widget for CustomSlider<'a> {
         let id = ui.make_persistent_id(&param.name);
 
         ui.vertical(|ui| {
-            ui.label(format!("{}: {:.2}", &param.name, param.value));
+            ui.label(format!("{}: {}", &param.name, param.value));
 
             let desired_size = egui::vec2(ui.available_width(), 20.0);
             let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::drag());
