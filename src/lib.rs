@@ -2,7 +2,6 @@
 use wasm_bindgen::prelude::*;
 
 mod graph;
-// mod app;
 
 use eframe::egui;
 

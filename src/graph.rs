@@ -3,18 +3,17 @@ use eframe::{egui, App, Frame};
 use egui_plot::{Line, Plot, PlotPoints};
 use egui::Color32;
 use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
+use egui::{Ui, Widget, Response, Sense, Pos2, Rect, Stroke, TextEdit, Slider};
 use egui_commonmark;
 use egui_extras::syntax_highlighting;
 #[cfg(target_arch = "wasm32")]
 use hframe::Aware;
 use base64::{engine::general_purpose, Engine as _};
 use form_urlencoded::{parse, Serializer};
-
+use std::sync::{Arc, Mutex};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use std::sync::{Arc, Mutex};
 #[cfg(target_arch = "wasm32")]
 static PENDING_CONTENT: Mutex<Option<String>> = Mutex::new(None);
 
@@ -39,7 +38,7 @@ use std::rc::Rc;
 
 // スライダ情報を保持する構造体
 #[derive(Clone)]
-struct SliderParam {
+pub struct SliderParam {
     name: String,
     min: f64,
     max: f64,
@@ -332,14 +331,12 @@ impl App for ParametricPlotApp {
             if !self.sliders.is_empty() || !self.checkboxes.is_empty() || !self.color_pickers.is_empty() {
                 // 左上にパラメータパネルを配置
                 let subwin = egui::Window::new("パラメータ")
-                    .resizable(false)
+                    .resizable(true)
                     .show(ctx, |ui| {
                         ui.set_min_width(100.0);
                         for slider in &mut self.sliders {
-                            if ui.add(egui::Slider::new(&mut slider.value, slider.min..=slider.max)
-                                .text(&slider.name)
-                                .step_by(slider.step)).changed() 
-                            {
+                            let widget = CustomSlider::new(slider);
+                            if ui.add(widget).changed() {
                                 need_redraw = true;
                             }
                         }
@@ -780,4 +777,65 @@ pub fn update(data: &str) {
 extern "C" {
     #[wasm_bindgen(js_name = update)]
     pub fn update_monaco(data: &str);
+}
+
+struct CustomSlider<'a> {
+    param: &'a mut SliderParam,
+}
+
+impl<'a> CustomSlider<'a> {
+    fn new(param: &'a mut SliderParam) -> Self {
+        Self { param }
+    }
+}
+
+impl<'a> Widget for CustomSlider<'a> {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let param = self.param;
+        let id = ui.make_persistent_id(&param.name);
+
+        ui.vertical(|ui| {
+            ui.label(&param.name);
+            ui.label(format!("Value: {:.2}", param.value));
+
+            let desired_size = egui::vec2(ui.available_width(), 20.0);
+            let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::drag()); // responseをmutにする
+
+            ui.painter().rect_filled(rect, 0.0, Color32::from_gray(200));
+
+            let normalized = (param.value - param.min) / (param.max - param.min);
+            let handle_pos = Pos2::new(
+                rect.left() + (normalized * rect.width() as f64) as f32,
+                rect.center().y,
+            );
+
+            ui.painter().circle_filled(handle_pos, 10.0, Color32::RED);
+
+            if response.dragged() {
+                let delta_x = ui.input(|i| i.pointer.delta().x) as f64;
+                let range = param.max - param.min;
+                
+                let value_delta = (delta_x / rect.width() as f64) * range;
+                
+                let mut new_value = param.value + value_delta;
+
+                new_value = new_value.clamp(param.min, param.max);
+
+                if param.step > 0.0 {
+                    new_value = (new_value / param.step).round() * param.step;
+                    new_value = new_value.clamp(param.min, param.max);
+                }
+                
+                // 値が実際に変更されたかチェックし、response.changedを更新
+                if (param.value - new_value).abs() > f64::EPSILON * new_value.abs().max(1.0) { // 浮動小数点比較の注意
+                    param.value = new_value;
+                    response.mark_changed(); // 値が変更されたことをマーク
+                    println!("Slider value updated to: {}", param.value); // デバッグプリント
+                }
+            }
+
+            response
+        })
+        .inner
+    }
 }
