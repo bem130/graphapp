@@ -809,10 +809,10 @@ impl<'a> Widget for CustomSlider<'a> {
             ui.painter().line_segment([line_start, line_end], line_stroke);
 
             // スライダの「ハンドル」の色をテーマに合わせる
-            let handle_color = if response.dragged() || response.hovered() {
-                ui.visuals().widgets.active.fg_stroke.color // ドラッグ中またはホバー中はアクティブな前景ストロークの色
+            let handle_color = if response.dragged() {
+                ui.visuals().widgets.active.bg_fill
             } else {
-                ui.visuals().widgets.inactive.fg_stroke.color // それ以外は非アクティブな前景ストロークの色
+                ui.visuals().widgets.inactive.bg_fill
             };
 
             let normalized = (param.value - param.min) / (param.max - param.min);
@@ -820,7 +820,19 @@ impl<'a> Widget for CustomSlider<'a> {
                 rect.left() + (normalized * rect.width() as f64) as f32,
                 line_y,
             );
-            ui.painter().circle_filled(handle_pos, 10.0, handle_color); // ハンドルの色を適用
+
+            // ハンドルのボーダーを描画
+            let border_radius = 10.5; // ボーダーを含む外側の円の半径
+            let border_color = if response.dragged() || response.hovered() {
+                ui.visuals().widgets.active.fg_stroke.color
+            } else {
+                ui.visuals().widgets.inactive.fg_stroke.color
+            };
+            ui.painter().circle_filled(handle_pos, border_radius, border_color);
+
+            // ハンドルの本体（内側）を描画
+            let handle_radius = 10.0; // ハンドル本体の半径
+            ui.painter().circle_filled(handle_pos, handle_radius, handle_color); // ハンドルの色を適用
 
             if response.dragged() {
                 let delta_x = ui.input(|i| i.pointer.delta().x) as f64;
