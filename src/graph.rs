@@ -95,7 +95,7 @@ impl Default for ParametricPlotApp {
         let js_context = BoaContext::default();
         let mut default_js_code = r#"
 function setup() {
-    addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
+    addSlider('radius', { min: 0.5, max: 5.0, step: 0.001, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
     addCheckbox('show', '円を表示する', { default: true });
 }
@@ -795,21 +795,32 @@ impl<'a> Widget for CustomSlider<'a> {
         let id = ui.make_persistent_id(&param.name);
 
         ui.vertical(|ui| {
-            ui.label(&param.name);
-            ui.label(format!("Value: {:.2}", param.value));
+            ui.label(format!("{}: {:.2}", &param.name, param.value));
 
             let desired_size = egui::vec2(ui.available_width(), 20.0);
-            let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::drag()); // responseをmutにする
+            let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::drag());
 
-            ui.painter().rect_filled(rect, 0.0, Color32::from_gray(200));
+            // スライダの「棒」の色をテーマに合わせる
+            let line_color = ui.visuals().widgets.inactive.bg_fill; // 非アクティブ時の背景色を棒の色に
+            let line_y = rect.center().y;
+            let line_start = Pos2::new(rect.left(), line_y);
+            let line_end = Pos2::new(rect.right(), line_y);
+            let line_stroke = Stroke::new(2.0, line_color);
+            ui.painter().line_segment([line_start, line_end], line_stroke);
+
+            // スライダの「ハンドル」の色をテーマに合わせる
+            let handle_color = if response.dragged() || response.hovered() {
+                ui.visuals().widgets.active.fg_stroke.color // ドラッグ中またはホバー中はアクティブな前景ストロークの色
+            } else {
+                ui.visuals().widgets.inactive.fg_stroke.color // それ以外は非アクティブな前景ストロークの色
+            };
 
             let normalized = (param.value - param.min) / (param.max - param.min);
             let handle_pos = Pos2::new(
                 rect.left() + (normalized * rect.width() as f64) as f32,
-                rect.center().y,
+                line_y,
             );
-
-            ui.painter().circle_filled(handle_pos, 10.0, Color32::RED);
+            ui.painter().circle_filled(handle_pos, 10.0, handle_color); // ハンドルの色を適用
 
             if response.dragged() {
                 let delta_x = ui.input(|i| i.pointer.delta().x) as f64;
@@ -826,11 +837,9 @@ impl<'a> Widget for CustomSlider<'a> {
                     new_value = new_value.clamp(param.min, param.max);
                 }
                 
-                // 値が実際に変更されたかチェックし、response.changedを更新
-                if (param.value - new_value).abs() > f64::EPSILON * new_value.abs().max(1.0) { // 浮動小数点比較の注意
+                if (param.value - new_value).abs() > f64::EPSILON * new_value.abs().max(1.0) {
                     param.value = new_value;
-                    response.mark_changed(); // 値が変更されたことをマーク
-                    println!("Slider value updated to: {}", param.value); // デバッグプリント
+                    response.mark_changed();
                 }
             }
 
