@@ -1,8 +1,8 @@
 use boa_engine::JsObject;
 use eframe::{egui, App, Frame};
-use egui_plot::{Line, Plot, PlotPoints};
+use egui_plot::{Line, Plot, PlotPoints, Polygon, Stroke};
 use egui::Color32;
-use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey};
+use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey, JsNativeError};
 use egui::{Ui, Widget, Response, Sense, Pos2, Rect, Stroke, TextEdit, Slider};
 use egui_commonmark;
 use egui_extras::syntax_highlighting;
@@ -88,6 +88,7 @@ pub struct ParametricPlotApp {
     api_docs_content: String,
     log_output: Rc<RefCell<Vec<LogEntry>>>,
     commonmark_cache: egui_commonmark::CommonMarkCache,
+    polygons: Rc<RefCell<Vec<(String, Vec<[f64; 2]>, Color32, Color32, f32)>>>, // (名前, 頂点群, 枠線色, 塗りつぶし色, 線の太さ)
 }
 
 impl Default for ParametricPlotApp {
@@ -97,15 +98,25 @@ impl Default for ParametricPlotApp {
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.001, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
-    addCheckbox('show', '円を表示する', { default: true });
+    addColorpicker('fillColor', { default: [255, 200, 200] });
+    addCheckbox('show', '図形を表示する', { default: true });
 }
+
 function draw() {
     if (show) {
+        // 円の描画
         addParametricGraph(
             '円',
             function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
             { min: 0, max: 2 * Math.PI, num_points: 100 },
             { color: lineColor, weight: 2.0 }
+        );
+
+        // 三角形の描画
+        addPolygon(
+            '三角形',
+            [[radius, 0], [radius * Math.cos(2*Math.PI/3), radius * Math.sin(2*Math.PI/3)], [radius * Math.cos(4*Math.PI/3), radius * Math.sin(4*Math.PI/3)]],
+            { color: lineColor, fill: fillColor, weight: 2.0 }
         );
     }
 }
@@ -154,6 +165,7 @@ function draw() {
             api_docs_content: include_str!("../doc/api.md").to_string(),
             log_output: Rc::new(RefCell::new(Vec::new())),
             commonmark_cache: egui_commonmark::CommonMarkCache::default(),
+            polygons: Rc::new(RefCell::new(Vec::new())),
         }
     }
 }
@@ -234,9 +246,7 @@ impl App for ParametricPlotApp {
         });
         // #[cfg(target_arch = "wasm32")]
         // subwin.aware();
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let mut js_error: Option<String> = None;
-            let mut need_redraw = false;
+        egui::CentralPanel::default().show(ctx, |ui| {            let mut need_redraw = false;
 
             // グラフエリアのサイズを画面全体に設定
             let available_size = ui.available_size();
@@ -251,11 +261,17 @@ impl App for ParametricPlotApp {
                 .data_aspect(1.0)
                 .x_axis_label("x")
                 .y_axis_label("y");
-
             // プロット描画
             plot.show(ui, |plot_ui| {
+                // 多角形を描画
+                for (name, points, color, fill, weight) in self.polygons.borrow().iter() {
+                    let polygon = Polygon::new(name, PlotPoints::new(points.clone()))
+                        .stroke(Stroke::new(*weight, *color))
+                        .fill_color(*fill);
+                    plot_ui.polygon(polygon);
+                }
+
                 // 通常の曲線を描画
-                // println!("{:?}",self.graph_lines.borrow());
                 for (name, points, color, weight) in self.graph_lines.borrow().iter() {
                     let line = Line::new(name, PlotPoints::new(points.clone()))
                         .color(*color)
@@ -419,7 +435,7 @@ impl App for ParametricPlotApp {
                     use web_sys::Url;
                     if let Some(window) = web_sys::window() {
                         if let Ok(href) = window.location().href() {
-                            if let Ok(mut url) = Url::new(&href) {
+                            if let Ok(url) = Url::new(&href) {
                                 // 既存クエリをパース
                                 let search = url.search();
                                 let mut params: Vec<(String, String)> = vec![];
@@ -498,7 +514,9 @@ impl App for ParametricPlotApp {
                         };
                     } catch(e) { stderr('[console patch error] ' + e); }
                 "#;
-                self.js_context.eval(Source::from_bytes(console_js));
+                if let Err(e) = self.js_context.eval(Source::from_bytes(console_js)) {
+                    println!("Error setting up console: {:?}", e);
+                }
 
                 let sliders_rc = Rc::new(RefCell::new(Vec::new()));
                 let sliders_api = sliders_rc.clone();
@@ -508,6 +526,7 @@ impl App for ParametricPlotApp {
                 let color_pickers_api = color_pickers_rc.clone();
                 let graph_lines_api = self.graph_lines.clone();
                 let vectors_api = self.vectors.clone();
+                let polygons_api = self.polygons.clone();
 
                 // addSlider API
                 let add_slider = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| {
@@ -696,20 +715,83 @@ impl App for ParametricPlotApp {
                 };
                 unsafe { self.js_context.register_global_builtin_callable("addVector".into(), 5, NativeFunction::from_closure(add_vector)).unwrap(); }
 
+                // addPolygon API
+                let add_polygon = move |_this: &JsValue, args: &[JsValue], context: &mut BoaContext| -> Result<JsValue, _> {
+                    let name = args.get_or_undefined(0).to_string(context)?.to_std_string().unwrap_or_default();                    let points_array = args.get_or_undefined(1).as_object()
+                        .ok_or_else(|| JsNativeError::error().with_message("Expected array for points"))?;
+                    let style_obj = args.get_or_undefined(2).as_object();
+
+                    let mut points = Vec::new();                    let length = {
+                        let key: PropertyKey = js_string!("length").into();
+                        points_array.get(key, context)?.as_number().unwrap_or(0.0) as u32
+                    };
+                    for i in 0..length {
+                        if let Some(point) = points_array.get(i, context)?.as_object() {
+                            let x = point.get(0, context)?.as_number().unwrap_or(0.0);
+                            let y = point.get(1, context)?.as_number().unwrap_or(0.0);
+                            points.push([x, y]);
+                        }
+                    }
+
+                    let default_color = Color32::from_rgb(0, 0, 0);
+                    let default_fill = Color32::from_rgb(128, 128, 255);
+                    let default_weight = 1.5;                    let (color, fill, weight) = if let Some(style) = style_obj {                        let color = {
+                            let key: PropertyKey = js_string!("color").into();
+                            if let Some(color_arr) = style.get(key, context)?.as_object() {
+                                Color32::from_rgb(
+                                    color_arr.get(0, context)?.as_number().unwrap_or(0.0) as u8,
+                                    color_arr.get(1, context)?.as_number().unwrap_or(0.0) as u8,
+                                    color_arr.get(2, context)?.as_number().unwrap_or(0.0) as u8,
+                                )
+                            } else {
+                                default_color
+                            }
+                        };
+
+                        let fill = {
+                            let key: PropertyKey = js_string!("fill").into();
+                            if let Some(fill_arr) = style.get(key, context)?.as_object() {
+                                Color32::from_rgb(
+                                    fill_arr.get(0, context)?.as_number().unwrap_or(0.0) as u8,
+                                    fill_arr.get(1, context)?.as_number().unwrap_or(0.0) as u8,
+                                    fill_arr.get(2, context)?.as_number().unwrap_or(0.0) as u8,
+                                )
+                            } else {
+                                default_fill
+                            }
+                        };
+
+                        let weight = {
+                            let key: PropertyKey = js_string!("weight").into();
+                            style.get(key, context)?.as_number().unwrap_or(default_weight as f64) as f32
+                        };
+
+                        (color, fill, weight)
+                    } else {
+                        (default_color, default_fill, default_weight)
+                    };
+
+                    polygons_api.borrow_mut().push((name, points, color, fill, weight));
+                    Ok(JsValue::undefined())
+                };
+
+                unsafe {
+                    self.js_context.register_global_builtin_callable("addPolygon".into(), 3, NativeFunction::from_closure(add_polygon)).unwrap();
+                }
+
                 // ログ出力をリセット
                 self.log_output.borrow_mut().clear();
 
                 // コードの読み込み
                 println!("load");
                 if let Err(e) = self.js_context.eval(Source::from_bytes(self.js_code.as_str())) {
-                    js_error = Some(format!("Load error: {:?}", e));
+                    println!("Load error: {:?}", e);
                 }
 
                 // Setup関数の実行
                 println!("setup");
                 if let Err(e) = self.js_context.eval(Source::from_bytes("try {setup();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}")) {
-                    js_error = Some(format!("Setup error: {:?}", e));
-                    return;
+                    println!("Setup error: {:?}", e);
                 }
 
                 self.sliders = sliders_rc.borrow().clone();
@@ -747,9 +829,9 @@ impl App for ParametricPlotApp {
 
                 self.graph_lines.borrow_mut().clear();
                 self.vectors.borrow_mut().clear();
+                self.polygons.borrow_mut().clear();
                 if let Err(e) = self.js_context.eval(Source::from_bytes("try {draw();} catch (e) {stderr(e.toString()+'\\n'+e.stack);}")) {
-                    js_error = Some(format!("Draw error: {:?}", e));
-                    return;
+                    println!("Draw error: {:?}", e);
                 }
             }
         });
@@ -792,7 +874,7 @@ impl<'a> CustomSlider<'a> {
 impl<'a> Widget for CustomSlider<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
         let param = self.param;
-        let id = ui.make_persistent_id(&param.name);
+        let _id = ui.make_persistent_id(&param.name);
 
         ui.vertical(|ui| {
             ui.label(format!("{}: {}", &param.name, param.value));
