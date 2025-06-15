@@ -179,11 +179,11 @@ console.error('エラーが発生しました:', errorObject);
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.001, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
-    addCheckbox('show', '円を表示する', { default: true });
+    addCheckbox('showCircle', '円を表示する', { default: true });
 }
 
 function draw() {
-    if (show) {
+    if (showCircle) {
         addParametricGraph(
             '円',
             function(t) { return [radius * Math.cos(t), radius * Math.sin(t)]; },
@@ -191,5 +191,71 @@ function draw() {
             { color: lineColor, weight: 2.0 }
         );
     }
+}
+```
+
+```js
+function setup() {
+    addSlider('amplitude1', { min: 0.1, max: 3.0, step: 0.01, default: 1.0 });
+    addSlider('frequency1', { min: 1, max: 10, step: 0.01, default: 3 });
+    addSlider('amplitude2', { min: 0.1, max: 3.0, step: 0.01, default: 0.5 });
+    addSlider('frequency2', { min: 1, max: 10, step: 0.01, default: 5 });
+    addColorpicker('graph1Color', { default: [255, 0, 0] });
+    addColorpicker('graph2Color', { default: [0, 0, 255] });
+    addCheckbox('showDebug', 'デバッグ情報を表示', { default: false });
+}
+
+function draw() {
+    // グラフ1: 振幅と周波数が制御可能なサインカーブ
+    addParametricGraph(
+        'サインカーブ1',
+        function(t) { return [t, amplitude1 * Math.sin(frequency1 * t)]; },
+        { min: -5, max: 5, num_points: 2000 },
+        { color: graph1Color, weight: 1.5 }
+    );
+
+    // グラフ2: 振幅と周波数が制御可能なコサインカーブ
+    addParametricGraph(
+        'コサインカーブ2',
+        function(t) { return [t, amplitude2 * Math.cos(frequency2 * t)]; },
+        { min: -5, max: 5, num_points: 2000 },
+        { color: graph2Color, weight: 1.5 }
+    );
+
+    if (showDebug) {
+        console.log("グラフ1 - 振幅:", amplitude1, "周波数:", frequency1);
+        console.log("グラフ2 - 振幅:", amplitude2, "周波数:", frequency2);
+    }
+}
+```
+
+```js
+function setup() {
+    addSlider('tValue', { min: -5.0, max: 5.0, step: 0.01, default: 0.0 });
+    addColorpicker('parabolaColor', { default: [0, 100, 200] });
+    addColorpicker('vectorColor', { default: [200, 50, 0] });
+}
+
+function draw() {
+    // 放物線 y = x^2 を媒介変数表示で描画 (x = t, y = t^2)
+    addParametricGraph(
+        '放物線',
+        function(t) { return [t, t * t]; },
+        { min: -5, max: 5, num_points: 200 },
+        { color: parabolaColor, weight: 1.5 }
+    );
+
+    // スライダーで指定された t の値における点と接線ベクトル
+    // 点: (t, t^2)
+    // 接線ベクトル: (dx/dt, dy/dt) = (1, 2t)
+    addVector(
+        '接線ベクトル',
+        function(t) { return [t, t * t]; },
+        function(t) { return [1, 2 * t]; },
+        tValue,
+        { color: vectorColor, weight: 2.5 }
+    );
+
+    console.log("現在の t の値:", tValue);
 }
 ```
