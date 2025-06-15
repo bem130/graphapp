@@ -533,7 +533,7 @@ impl App for ParametricPlotApp {
                     
                     let min = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("min")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
                     let max = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("max")), context).and_then(|v| v.to_number(context)).unwrap_or(1.0);
-                    let step = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("step")), context).and_then(|v| v.to_number(context)).unwrap_or(0.1);
+                    let step = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("step")), context).and_then(|v| v.to_number(context)).unwrap_or(0.001);
                     let default = params.get(boa_engine::property::PropertyKey::from(boa_engine::JsString::from("default")), context).and_then(|v| v.to_number(context)).unwrap_or(0.0);
                     
                     sliders_api.borrow_mut().push(SliderParam {

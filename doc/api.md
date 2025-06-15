@@ -28,7 +28,7 @@
 *   `params` (Object): スライダーのパラメータを指定するオブジェクト。
     *   `min` (Number, optional): 最小値。デフォルトは `0.0`。
     *   `max` (Number, optional): 最大値。デフォルトは `1.0`。
-    *   `step` (Number, optional): 値の刻み幅。デフォルトは `0.1`。
+    *   `step` (Number, optional): 値の刻み幅。デフォルトは `0.001`。
     *   `default` (Number, optional): 初期値。デフォルトは `0.0`。
 
 **例:**
