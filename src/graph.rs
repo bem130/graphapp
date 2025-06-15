@@ -881,7 +881,7 @@ impl<'a> Widget for CustomSlider<'a> {
             let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::drag());
 
             // スライダの「棒」の色をテーマに合わせる
-            let line_color = ui.visuals().widgets.inactive.bg_fill; // 非アクティブ時の背景色を棒の色に
+            let line_color = ui.visuals().widgets.inactive.bg_fill;
             let line_y = rect.center().y;
             let line_start = Pos2::new(rect.left(), line_y);
             let line_end = Pos2::new(rect.right(), line_y);
@@ -894,6 +894,11 @@ impl<'a> Widget for CustomSlider<'a> {
             } else {
                 ui.visuals().widgets.inactive.bg_fill
             };
+            let border_color = if response.dragged() || response.hovered() {
+                ui.visuals().widgets.active.fg_stroke.color
+            } else {
+                ui.visuals().widgets.inactive.fg_stroke.color
+            };
 
             let normalized = (param.value - param.min) / (param.max - param.min);
             let handle_pos = Pos2::new(
@@ -902,26 +907,19 @@ impl<'a> Widget for CustomSlider<'a> {
             );
 
             // ハンドルのボーダーを描画
-            let border_radius = 10.5; // ボーダーを含む外側の円の半径
-            let border_color = if response.dragged() || response.hovered() {
-                ui.visuals().widgets.active.fg_stroke.color
-            } else {
-                ui.visuals().widgets.inactive.fg_stroke.color
-            };
+            let border_radius = 8.5; // ボーダーを含む外側の円の半径
             ui.painter().circle_filled(handle_pos, border_radius, border_color);
 
-            // ハンドルの本体（内側）を描画
-            let handle_radius = 10.0; // ハンドル本体の半径
-            ui.painter().circle_filled(handle_pos, handle_radius, handle_color); // ハンドルの色を適用
+            // ハンドルを描画
+            let handle_radius = 8.0;
+            ui.painter().circle_filled(handle_pos, handle_radius, handle_color);
 
             if response.dragged() {
                 let delta_x = ui.input(|i| i.pointer.delta().x) as f64;
                 let range = param.max - param.min;
                 
                 let value_delta = (delta_x / rect.width() as f64) * range;
-                
                 let mut new_value = param.value + value_delta;
-
                 new_value = new_value.clamp(param.min, param.max);
 
                 if param.step > 0.0 {
@@ -936,7 +934,6 @@ impl<'a> Widget for CustomSlider<'a> {
             }
 
             response
-        })
-        .inner
+        }).inner
     }
 }
