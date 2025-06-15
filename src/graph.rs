@@ -1,6 +1,6 @@
 use boa_engine::JsObject;
 use eframe::{egui, App, Frame};
-use egui_plot::{Line, Plot, PlotPoints, Polygon, Stroke};
+use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use egui::Color32;
 use boa_engine::{Context as BoaContext, Source, JsValue, JsArgs, NativeFunction, js_string, property::Attribute, property::PropertyKey, JsNativeError};
 use egui::{Ui, Widget, Response, Sense, Pos2, Rect, Stroke, TextEdit, Slider};
@@ -98,7 +98,6 @@ impl Default for ParametricPlotApp {
 function setup() {
     addSlider('radius', { min: 0.5, max: 5.0, step: 0.001, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
-    addColorpicker('fillColor', { default: [255, 200, 200] });
     addCheckbox('show', '図形を表示する', { default: true });
 }
 
@@ -116,7 +115,7 @@ function draw() {
         addPolygon(
             '三角形',
             [[radius, 0], [radius * Math.cos(2*Math.PI/3), radius * Math.sin(2*Math.PI/3)], [radius * Math.cos(4*Math.PI/3), radius * Math.sin(4*Math.PI/3)]],
-            { color: lineColor, fill: fillColor, weight: 2.0 }
+            { color: lineColor, weight: 2.0 }
         );
     }
 }
@@ -266,8 +265,7 @@ impl App for ParametricPlotApp {
                 // 多角形を描画
                 for (name, points, color, fill, weight) in self.polygons.borrow().iter() {
                     let polygon = Polygon::new(name, PlotPoints::new(points.clone()))
-                        .stroke(Stroke::new(*weight, *color))
-                        .fill_color(*fill);
+                        .stroke(Stroke::new(*weight, *color));
                     plot_ui.polygon(polygon);
                 }
 

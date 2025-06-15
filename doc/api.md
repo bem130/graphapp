@@ -131,9 +131,8 @@ addVector(
 *   `name` (String): 多角形の名前（凡例などで使用）。
 *   `points` (Array<Array<Number>>): 頂点座標の配列。各要素は `[x, y]` 形式の配列。
 *   `style` (Object, optional): スタイル指定オブジェクト。
-    *   `color` (Array<Number>, optional): 枠線の色 `[r, g, b]` (各 0-255)。デフォルトは `[0, 0, 0]`。
-    *   `fill` (Array<Number>, optional): 塗りつぶし色 `[r, g, b]` (各 0-255)。デフォルトは `[128, 128, 255]`。
-    *   `weight` (Number, optional): 枠線の太さ。デフォルトは `1.5`。
+    *   `color` (Array<Number>, optional): 線の色 `[r, g, b]` (各 0-255)。デフォルトは `[0, 0, 0]`。
+    *   `weight` (Number, optional): 線の太さ。デフォルトは `1.5`。
 
 **例:**
 
@@ -141,7 +140,7 @@ addVector(
 addPolygon(
     '三角形',
     [ [0, 0], [1, 0], [0.5, 1] ],
-    { color: [255, 0, 0], fill: [255, 200, 200], weight: 2.0 }
+    { color: [255, 0, 0], weight: 2.0 }
 );
 ```
 
@@ -178,7 +177,7 @@ console.error('エラーが発生しました:', errorObject);
 
 ```js
 function setup() {
-    addSlider('radius', { min: 0.5, max: 5.0, step: 0.1, default: 1.0 });
+    addSlider('radius', { min: 0.5, max: 5.0, step: 0.001, default: 1.0 });
     addColorpicker('lineColor', { default: [255, 0, 0] });
     addCheckbox('show', '円を表示する', { default: true });
 }
